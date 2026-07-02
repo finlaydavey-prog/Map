@@ -1,9 +1,10 @@
 # Lumen — Commutable Distance Map (London)
 
 Watch London light up. Drop a beacon, drag the time slider, and individual
-streets illuminate outward through the road network — electric cyan near the
-origin, fading to magenta at the edge of reachability. In transit mode the
-tube lines (official TfL colours) act as arteries: the glow travels
+streets colour in outward through the road network on a clean, light
+cartographic base — deepest colour near the origin, fading toward the edge of
+reachability. In transit mode the tube lines (solid official TfL colours over
+white casing, like a proper transit map) act as arteries: the wave travels
 station-to-station along each line, then blooms into the streets around every
 reached station.
 
@@ -26,27 +27,26 @@ npm run build      # type-check + production bundle
   client-side: the current time is smoothed each animation frame and baked
   into GPU paint expressions (`setPaintProperty`, `validate:false`), so the
   whole network re-evaluates per-feature on the GPU with zero per-street JS.
-  Dragging down retracts the glow the same way.
+  Dragging down retracts the coloured region the same way.
 - **Street-by-street spread.** Every street segment carries a reach time
-  (minutes) and a traversal duration; glow intensity ramps in over the
-  traversal, brightness falls off toward the frontier, and the outer ~12%
-  shimmers.
-- **Transit mode.** Central, Victoria, Jubilee and Elizabeth lines in
-  official TfL colours. Station-to-station hops are subdivided so the glow
-  visibly crawls along the line; stations pop in as glowing dots (interchanges
-  get a ring); line segments beyond the reachable time stay dimmed. The street
-  glow keeps the cyan→magenta time gradient so the two systems read
-  distinctly.
-- **Compare two origins.** Origin B renders in warm amber; streets reached by
-  both within the budget render white-hot. A "shared streets" stat appears.
+  (minutes) and a traversal duration; each street fades in over its traversal,
+  and a solid sequential ramp (darkest at the origin, palest at the frontier)
+  encodes travel time. No glow/blur layers — flat, solid colour.
+- **Transit mode.** Central, Victoria, Jubilee and Elizabeth lines in solid
+  official TfL colours over white casing. Station-to-station hops are
+  subdivided so the colour visibly crawls along the line; stations pop in as
+  white dots with dark rings (interchanges heavier); line segments beyond the
+  reachable time stay pale. Street colouring uses the per-mode ramp so the two
+  systems read distinctly.
+- **Compare two origins.** Origin B renders in warm orange; streets reached by
+  both within the budget render deep violet. A "shared streets" stat appears.
 - **Live stats** (streets lit, stations, area km², shared streets) update
   continuously with the slider from precomputed per-minute cumulative
   histograms — O(1) per frame.
 - **Shareable URLs**: `?o=lat,lng&o2=lat,lng&mode=transit&t=25`.
-- **Loading choreography**: the beacon pulses alone in the dark city while
-  bands "arrive" (simulated latency), then the glow blooms outward in a sweep.
-- **Mobile**: controls collapse into a bottom sheet with a compact stat row;
-  coarse-pointer devices get half-rate expression updates (same visuals).
+- **Loading choreography**: the beacon pulses alone on the quiet map while
+  bands "arrive" (simulated latency), then the colour sweeps outward.
+- **Mobile**: controls collapse into a bottom sheet with a compact stat row.
 - Errors (clicks outside the demo area, clipboard failures) surface as inline
   glass toasts — never browser alerts.
 
@@ -59,7 +59,7 @@ npm run build      # type-check + production bundle
 | Transit isochrones (Geoapify / TfL) | Same provider; the graph is extended with station lobby + platform nodes, per-line hop times and interchange penalties |
 | TfL line/station geometry | Hand-coded stations (approximate real coordinates) for 4 lines, official TfL colours (`src/lib/mock/tube.ts` carries the full colour table) |
 | Mapbox Geocoding | Fuzzy search over ~24 London places |
-| Mapbox GL JS + dark style | MapLibre GL (API-compatible fork) over a self-contained dark style — no token, no tiles, fully offline |
+| Mapbox GL JS + light style | MapLibre GL (API-compatible fork) over a self-contained light style — no token, no tiles, fully offline |
 
 ## Architecture (and how the real APIs plug in)
 
@@ -70,8 +70,8 @@ src/lib/reach.ts             Dijkstra over streets (+ transit graph in transit m
 src/lib/bands.ts             contour rings <-> radial profiles; 1-min interpolation
 src/lib/mock/                city grid, tube lines, geocoder places
 src/map/engine.ts            rAF loop, reveal sweep, paint updates, stats histograms
-src/map/expressions.ts       per-frame GPU paint expressions (the glow math)
-src/map/palette.ts           per-mode palettes, amber compare palette, TfL colours
+src/map/expressions.ts       per-frame GPU paint expressions (the reach colouring)
+src/map/palette.ts           per-mode ramps, orange compare palette, TfL colours
 src/components/              glass UI: slider, mode toggle, stats, search, toasts
 ```
 
@@ -88,7 +88,7 @@ The swap plan, per the provider contract in `types.ts`:
    between stations + walking bloom around reached stations — which is
    exactly the graph shape the mock already computes, so the renderer needs
    no changes.
-3. **Map** → replace `maplibre-gl` with `mapbox-gl` + the dark style, and feed
+3. **Map** → replace `maplibre-gl` with `mapbox-gl` + a light style, and feed
    street geometry from vector tiles (feature-state per street) instead of the
    bundled GeoJSON. Paint expressions carry over unchanged.
 4. Keys go in `.env` (see `.env.example`); nothing is hardcoded.
@@ -97,6 +97,6 @@ The swap plan, per the provider contract in `types.ts`:
 
 - `REVEAL_MINUTES_PER_SEC`, `SMOOTH_TAU` — bloom sweep speed / slider tracking
   feel (`src/map/engine.ts`).
-- Glow widths/opacities and the shimmer band — `src/map/expressions.ts`.
+- Ramp positions and fade-in behaviour — `src/map/expressions.ts`.
 - Mode speeds, station entry/interchange penalties — `src/lib/reach.ts`.
 - Palettes — `src/map/palette.ts`.

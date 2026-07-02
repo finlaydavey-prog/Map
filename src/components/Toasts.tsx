@@ -16,7 +16,7 @@ export function Toasts({ toasts }: { toasts: Toast[] }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="glass rounded-xl px-4 py-2 text-sm text-white/85"
+            className="glass rounded-xl px-4 py-2 text-sm text-slate-800"
           >
             {t.message}
           </motion.div>

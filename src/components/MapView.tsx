@@ -64,11 +64,5 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
     isInsideDemoArea: (pos) => engine.current?.isInsideDemoArea(pos) ?? false,
   }));
 
-  return (
-    <div className="absolute inset-0">
-      <div ref={container} className="absolute inset-0" />
-      {/* soft vignette so the map reads like a city seen at night from above */}
-      <div className="vignette pointer-events-none absolute inset-0" />
-    </div>
-  );
+  return <div ref={container} className="absolute inset-0" />;
 });

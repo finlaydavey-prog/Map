@@ -30,8 +30,8 @@ export function SearchBox({ onSelect }: Props) {
 
   return (
     <div ref={box} className="relative">
-      <div className="flex items-center gap-2 rounded-xl bg-white/[0.05] px-3 py-2 ring-1 ring-white/10 transition focus-within:ring-white/25">
-        <SearchIcon className="h-4 w-4 shrink-0 text-white/40" />
+      <div className="flex items-center gap-2 rounded-xl bg-slate-900/[0.04] px-3 py-2 ring-1 ring-slate-900/10 transition focus-within:ring-slate-900/30">
+        <SearchIcon className="h-4 w-4 shrink-0 text-slate-400" />
         <input
           value={q}
           onChange={(e) => {
@@ -54,7 +54,7 @@ export function SearchBox({ onSelect }: Props) {
             }
           }}
           placeholder="Search London…"
-          className="w-full bg-transparent text-sm text-white placeholder-white/30 outline-none"
+          className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 outline-none"
         />
       </div>
       <AnimatePresence>
@@ -72,11 +72,11 @@ export function SearchBox({ onSelect }: Props) {
                   onMouseEnter={() => setHighlight(i)}
                   onClick={() => pick(p)}
                   className={`flex w-full items-baseline justify-between px-3 py-1.5 text-left text-sm ${
-                    i === highlight ? 'bg-white/10 text-white' : 'text-white/75'
+                    i === highlight ? 'bg-slate-900/5 text-slate-900' : 'text-slate-600'
                   }`}
                 >
                   <span>{p.name}</span>
-                  <span className="text-[10px] text-white/35">{p.hint}</span>
+                  <span className="text-[10px] text-slate-400">{p.hint}</span>
                 </button>
               </li>
             ))}

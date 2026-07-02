@@ -20,19 +20,19 @@ export function TimeSlider({ value, onChange, palette }: Props) {
     <div className="w-full select-none" style={{ ['--accent' as string]: palette.accent }}>
       <div className="mb-1.5 flex items-end justify-between">
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-3xl font-semibold leading-none text-white tabular-nums">{value}</span>
-          <span className="text-sm text-white/50">min</span>
+          <span className="font-mono text-3xl font-semibold leading-none text-slate-900 tabular-nums">{value}</span>
+          <span className="text-sm text-slate-500">min</span>
         </div>
-        <span className="text-[11px] uppercase tracking-[0.18em] text-white/35">travel time</span>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">travel time</span>
       </div>
 
       <div className="relative h-8">
         {/* track */}
-        <div className="absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-white/10" />
-        {/* lit fill */}
+        <div className="absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-slate-900/10" />
+        {/* reached fill */}
         <div
           className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full"
-          style={{ width: `${pct}%`, background: fill, boxShadow: `0 0 12px 0 ${palette.accent}66` }}
+          style={{ width: `${pct}%`, background: fill }}
         />
         <input
           type="range"
@@ -46,7 +46,7 @@ export function TimeSlider({ value, onChange, palette }: Props) {
         />
       </div>
 
-      <div className="relative mt-0.5 h-4 text-[10px] font-medium text-white/30">
+      <div className="relative mt-0.5 h-4 text-[10px] font-medium text-slate-400">
         {TICKS.map((t) => (
           <span key={t} className="absolute -translate-x-1/2 tabular-nums" style={{ left: `${((t - 1) / 59) * 100}%` }}>
             {t}

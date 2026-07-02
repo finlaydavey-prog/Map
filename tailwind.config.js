@@ -8,8 +8,7 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        ink: '#04050a',
-        glass: 'rgba(12, 16, 28, 0.62)',
+        paper: '#f5f3ec',
       },
     },
   },

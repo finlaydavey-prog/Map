@@ -16,7 +16,7 @@ import {
   type StreetProps,
   type TransitSegProps,
 } from './geojson';
-import { stationPaint, streetPaint, transitPaint } from './expressions';
+import { stationPaint, streetPaint, transitProgress } from './expressions';
 import { COLORS, PALETTE_B, PALETTES } from './palette';
 
 export interface LiveStats {
@@ -99,11 +99,9 @@ export class GlowEngine {
   private markerB: maplibregl.Marker | null = null;
 
   private smoothT = 0;
-  private phase = 0;
   private revealStartMs = 0;
   private lastFrameMs = 0;
   private lastPaintT = -1;
-  private lastPhasePaint = 0;
   private generation = 0;
   private loading = false;
   private ready = false;
@@ -111,8 +109,6 @@ export class GlowEngine {
   private frameCount = 0;
   private lastStatsKey = '';
   private destroyed = false;
-  /** coarse-pointer devices get half-rate expression updates, same visuals */
-  private lowPower = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
   constructor(
     container: HTMLElement,
@@ -243,7 +239,7 @@ export class GlowEngine {
     map.addSource('stations', { type: 'geojson', data: this.stationFC });
     map.addSource('frontier', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
-    map.addLayer({ id: 'parks', type: 'fill', source: 'parks', paint: { 'fill-color': COLORS.park } });
+    map.addLayer({ id: 'parks', type: 'fill', source: 'parks', paint: { 'fill-color': COLORS.park, 'fill-opacity': 0.8 } });
     map.addLayer({ id: 'water', type: 'fill', source: 'water', paint: { 'fill-color': COLORS.water } });
 
     map.addLayer({
@@ -280,23 +276,11 @@ export class GlowEngine {
         ['*', ['get', 'w'], at16],
       ] as never;
     map.addLayer({
-      id: 'streets-glow',
+      id: 'streets-lit',
       type: 'line',
       source: 'streets',
       layout: { 'line-cap': 'round' },
-      paint: {
-        'line-color': '#000',
-        'line-width': widthByZoom(2.4, 6.5, 14),
-        'line-opacity': 0,
-        'line-blur': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 3, 13, 7, 16, 14] as never,
-      },
-    });
-    map.addLayer({
-      id: 'streets-core',
-      type: 'line',
-      source: 'streets',
-      layout: { 'line-cap': 'round' },
-      paint: { 'line-color': '#000', 'line-width': widthByZoom(0.7, 1.6, 3.4), 'line-opacity': 0 },
+      paint: { 'line-color': '#000', 'line-width': widthByZoom(0.9, 2.1, 4.2), 'line-opacity': 0 },
     });
 
     map.addLayer({
@@ -304,14 +288,25 @@ export class GlowEngine {
       type: 'line',
       source: 'frontier',
       paint: {
-        'line-color': ['match', ['get', 'which'], 'b', PALETTE_B.stops[2], PALETTES[this.state.mode].stops[3]] as never,
-        'line-width': 1.4,
-        'line-opacity': 0.28,
-        'line-blur': 2,
-        'line-dasharray': [3, 2],
+        'line-color': ['match', ['get', 'which'], 'b', PALETTE_B.accent, PALETTES[this.state.mode].accent] as never,
+        'line-width': 1.3,
+        'line-opacity': 0.35,
+        'line-dasharray': [3, 2.5],
       },
     });
 
+    // classic transit-map look: white casing under solid line colours
+    map.addLayer({
+      id: 'transit-casing',
+      type: 'line',
+      source: 'transit',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': COLORS.casing,
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 3.6, 13, 6, 16, 10] as never,
+        'line-opacity': 0.9,
+      },
+    });
     map.addLayer({
       id: 'transit-dim',
       type: 'line',
@@ -319,20 +314,8 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'] as never,
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.2, 13, 2.2, 16, 3.6] as never,
-        'line-opacity': 0.16,
-      },
-    });
-    map.addLayer({
-      id: 'transit-glow',
-      type: 'line',
-      source: 'transit',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ['get', 'color'] as never,
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 5, 13, 9, 16, 16] as never,
-        'line-opacity': 0,
-        'line-blur': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 4, 13, 7, 16, 12] as never,
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.8, 13, 3, 16, 5] as never,
+        'line-opacity': 0.22,
       },
     });
     map.addLayer({
@@ -342,7 +325,7 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'] as never,
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.6, 13, 2.8, 16, 4.6] as never,
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.8, 13, 3, 16, 5] as never,
         'line-opacity': 0,
       },
     });
@@ -354,47 +337,35 @@ export class GlowEngine {
       paint: {
         'circle-color': COLORS.stationDim,
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1.4, 13, 2.2, 16, 3.4] as never,
-        'circle-opacity': 0.75,
+        'circle-opacity': 0.8,
       },
-    });
-    map.addLayer({
-      id: 'stations-halo',
-      type: 'circle',
-      source: 'stations',
-      paint: { 'circle-color': '#bfe9ff', 'circle-radius': 0, 'circle-opacity': 0, 'circle-blur': 1 },
     });
     map.addLayer({
       id: 'stations-dot',
       type: 'circle',
       source: 'stations',
       paint: {
-        'circle-color': '#f4f8ff',
+        'circle-color': '#ffffff',
         'circle-radius': 0,
         'circle-opacity': 0,
-        'circle-stroke-color': '#ffffff',
+        'circle-stroke-color': COLORS.stationStroke,
         'circle-stroke-width': 0,
-        'circle-stroke-opacity': 0.55,
+        'circle-stroke-opacity': 0.9,
       },
     });
-
-    // mobile degrade: drop the blurred underglow layers, keep the core effect
-    if (this.lowPower) {
-      map.setLayoutProperty('streets-glow', 'visibility', 'none');
-      map.setLayoutProperty('stations-halo', 'visibility', 'none');
-    }
   }
 
   private applyModeVisibility(): void {
     const transit = this.state.mode === 'transit' ? 'visible' : 'none';
-    for (const id of ['transit-dim', 'transit-glow', 'transit-core', 'stations-dim', 'stations-halo', 'stations-dot']) {
+    for (const id of ['transit-casing', 'transit-dim', 'transit-core', 'stations-dim', 'stations-dot']) {
       this.map.setLayoutProperty(id, 'visibility', transit);
     }
     this.map.setPaintProperty('frontier', 'line-color', [
       'match',
       ['get', 'which'],
       'b',
-      PALETTE_B.stops[2],
-      PALETTES[this.state.mode].stops[3],
+      PALETTE_B.accent,
+      PALETTES[this.state.mode].accent,
     ] as never);
   }
 
@@ -487,20 +458,16 @@ export class GlowEngine {
     this.smoothT += (target - this.smoothT) * (1 - Math.exp(-dt / SMOOTH_TAU));
     if (Math.abs(target - this.smoothT) < 0.004) this.smoothT = target;
 
-    // reveal sweep after fresh data: cap T so the glow blooms outward
+    // reveal sweep after fresh data: cap T so the colour sweeps outward
     const revealCap = ((now - this.revealStartMs) / 1000) * REVEAL_MINUTES_PER_SEC;
     const T = Math.max(0.05, Math.min(this.smoothT, revealCap));
 
-    this.phase += dt * 2.4;
-
     const tMoving = Math.abs(T - this.lastPaintT) > 0.002;
-    const shimmerDue = now - this.lastPhasePaint > (this.lowPower ? 140 : 55);
-    if (tMoving || shimmerDue) {
+    if (tMoving) {
       this.paint(T);
       this.lastPaintT = T;
-      this.lastPhasePaint = now;
+      if (this.frameCount % 2 === 0) this.updateFrontier(T);
     }
-    if (tMoving && this.frameCount % 2 === 0) this.updateFrontier(T);
     this.pushStats(T);
   }
 
@@ -509,28 +476,17 @@ export class GlowEngine {
     const comparing = !!this.reachB;
     const palA = PALETTES[this.state.mode];
     const z = map.getZoom();
-    const sp = streetPaint(T, this.phase, palA, PALETTE_B, comparing);
+    const sp = streetPaint(T, palA, PALETTE_B, comparing);
     const opts = { validate: false };
-    map.setPaintProperty('streets-core', 'line-color', sp.color as never, opts);
-    map.setPaintProperty('streets-core', 'line-opacity', sp.coreOpacity as never, opts);
-    if (!this.lowPower) {
-      map.setPaintProperty('streets-glow', 'line-color', sp.color as never, opts);
-      map.setPaintProperty('streets-glow', 'line-opacity', sp.glowOpacity as never, opts);
-    }
+    map.setPaintProperty('streets-lit', 'line-color', sp.color as never, opts);
+    map.setPaintProperty('streets-lit', 'line-opacity', sp.opacity as never, opts);
 
     if (this.state.mode === 'transit') {
-      const tp = transitPaint(T);
-      map.setPaintProperty('transit-core', 'line-opacity', tp.coreOpacity as never, opts);
-      map.setPaintProperty('transit-glow', 'line-opacity', tp.glowOpacity as never, opts);
+      map.setPaintProperty('transit-core', 'line-opacity', transitProgress(T) as never, opts);
       const st = stationPaint(T, zoomLerp(z, 0.7, 1.1, 1.7));
       map.setPaintProperty('stations-dot', 'circle-radius', st.radius as never, opts);
       map.setPaintProperty('stations-dot', 'circle-opacity', st.opacity as never, opts);
       map.setPaintProperty('stations-dot', 'circle-stroke-width', st.strokeWidth as never, opts);
-      if (!this.lowPower) {
-        map.setPaintProperty('stations-halo', 'circle-radius', st.haloRadius as never, opts);
-        map.setPaintProperty('stations-halo', 'circle-opacity', st.haloOpacity as never, opts);
-        map.setPaintProperty('stations-halo', 'circle-color', palA.accent, opts);
-      }
     }
   }
 

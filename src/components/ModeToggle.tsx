@@ -18,7 +18,7 @@ interface Props {
 
 export function ModeToggle({ mode, onChange }: Props) {
   return (
-    <div className="flex gap-1 rounded-xl bg-white/[0.04] p-1">
+    <div className="flex gap-1 rounded-xl bg-slate-900/[0.05] p-1">
       {MODES.map((m) => {
         const Icon = ICONS[m];
         const active = m === mode;
@@ -30,14 +30,14 @@ export function ModeToggle({ mode, onChange }: Props) {
             title={PALETTES[m].label}
             aria-pressed={active}
             className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 transition-colors ${
-              active ? 'text-white' : 'text-white/40 hover:text-white/70'
+              active ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             {active && (
               <motion.span
                 layoutId="mode-pill"
-                className="absolute inset-0 rounded-lg"
-                style={{ background: `${accent}1f`, boxShadow: `inset 0 0 0 1px ${accent}59, 0 0 14px 0 ${accent}33` }}
+                className="absolute inset-0 rounded-lg bg-white"
+                style={{ boxShadow: `inset 0 0 0 1.5px ${accent}, 0 1px 4px rgba(30,34,44,0.12)` }}
                 transition={{ type: 'spring', stiffness: 500, damping: 35 }}
               />
             )}
@@ -45,7 +45,7 @@ export function ModeToggle({ mode, onChange }: Props) {
               animate={active ? { scale: [1, 1.25, 1] } : { scale: 1 }}
               transition={{ duration: 0.35 }}
               className="relative"
-              style={active ? { color: accent, filter: `drop-shadow(0 0 6px ${accent}aa)` } : undefined}
+              style={active ? { color: accent } : undefined}
             >
               <Icon className="h-5 w-5" />
             </motion.span>
