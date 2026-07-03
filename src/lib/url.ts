@@ -20,7 +20,12 @@ function parseLatLng(s: string | null): LngLat | null {
 }
 
 export function readShareState(): Partial<ShareState> {
-  const q = new URLSearchParams(window.location.search);
+  let q: URLSearchParams;
+  try {
+    q = new URLSearchParams(window.location.search);
+  } catch {
+    return {}; // sandboxed embeds may not expose a real location
+  }
   const out: Partial<ShareState> = {};
   const a = parseLatLng(q.get('o'));
   if (a) out.originA = a;
@@ -39,5 +44,10 @@ export function writeShareState(s: ShareState): void {
   if (s.originB) q.set('o2', fmt(s.originB));
   q.set('mode', s.mode);
   q.set('t', String(s.minutes));
-  window.history.replaceState(null, '', `${window.location.pathname}?${q.toString()}`);
+  try {
+    window.history.replaceState(null, '', `${window.location.pathname}?${q.toString()}`);
+  } catch {
+    // sandboxed embeds (e.g. hosted preview) may forbid history writes — fine,
+    // the Share button still copies a usable URL via the clipboard
+  }
 }
