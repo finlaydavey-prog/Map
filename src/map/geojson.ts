@@ -32,14 +32,15 @@ export function buildStreetCollection(city: CityModel): FeatureCollection<LineSt
 
 export interface TransitSegProps {
   color: string;
-  line: string;
+  /** hop index into TubeNetwork.hops + sub-segment position within it */
+  hop: number;
+  k: number;
+  n: number;
   /** minutes when the glow enters / fully covers this sub-segment */
   t0: number;
   t1: number;
   [key: string]: number | string;
 }
-
-const SUBDIVISIONS = 6;
 
 /**
  * Each station-to-station hop is split into sub-segments so the glow visibly
@@ -48,27 +49,33 @@ const SUBDIVISIONS = 6;
  */
 export function buildTransitCollection(tube: TubeNetwork): FeatureCollection<LineString, TransitSegProps> {
   const features: Feature<LineString, TransitSegProps>[] = [];
-  for (const line of tube.lines) {
-    for (let h = 0; h < line.stations.length - 1; h++) {
-      const a = tube.stations[tube.stationIndex.get(line.stations[h])!].pos;
-      const b = tube.stations[tube.stationIndex.get(line.stations[h + 1])!].pos;
-      for (let s = 0; s < SUBDIVISIONS; s++) {
-        const f0 = s / SUBDIVISIONS;
-        const f1 = (s + 1) / SUBDIVISIONS;
-        features.push({
-          type: 'Feature',
-          properties: { color: line.color, line: line.id, t0: UNREACHED, t1: UNREACHED + 1 },
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [a[0] + (b[0] - a[0]) * f0, a[1] + (b[1] - a[1]) * f0],
-              [a[0] + (b[0] - a[0]) * f1, a[1] + (b[1] - a[1]) * f1],
-            ],
-          },
-        });
-      }
+  tube.hops.forEach((hop, hi) => {
+    const a = tube.stations[hop.a].pos;
+    const b = tube.stations[hop.b].pos;
+    const n = Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
+    for (let k = 0; k < n; k++) {
+      const f0 = k / n;
+      const f1 = (k + 1) / n;
+      features.push({
+        type: 'Feature',
+        properties: {
+          color: tube.lines[hop.line].color,
+          hop: hi,
+          k,
+          n,
+          t0: UNREACHED,
+          t1: UNREACHED + 1,
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [a[0] + (b[0] - a[0]) * f0, a[1] + (b[1] - a[1]) * f0],
+            [a[0] + (b[0] - a[0]) * f1, a[1] + (b[1] - a[1]) * f1],
+          ],
+        },
+      });
     }
-  }
+  });
   return { type: 'FeatureCollection', features };
 }
 
@@ -81,31 +88,21 @@ export function updateTransitTimes(
   fc: FeatureCollection<LineString, TransitSegProps>,
   stationMin: (si: number) => number,
 ): void {
-  let fi = 0;
-  for (const line of tube.lines) {
-    for (let h = 0; h < line.stations.length - 1; h++) {
-      const siA = tube.stationIndex.get(line.stations[h])!;
-      const siB = tube.stationIndex.get(line.stations[h + 1])!;
-      let tA = stationMin(siA);
-      let tB = stationMin(siB);
-      // platform-to-platform travel: ride begins once the earlier station is
-      // reached, arrives at the later one hopMinutes later
-      const forward = tA <= tB;
-      const tStart = Math.min(tA, tB);
-      const hop = line.hopMinutes;
-      for (let s = 0; s < SUBDIVISIONS; s++) {
-        const f = features(fc, fi);
-        const k = forward ? s : SUBDIVISIONS - 1 - s;
-        f.t0 = tStart >= UNREACHED ? UNREACHED : tStart + (k / SUBDIVISIONS) * hop;
-        f.t1 = tStart >= UNREACHED ? UNREACHED + 1 : tStart + ((k + 1) / SUBDIVISIONS) * hop;
-        fi++;
-      }
+  for (const feature of fc.features) {
+    const p = feature.properties;
+    const hop = tube.hops[p.hop as number];
+    const tA = stationMin(hop.a);
+    const tB = stationMin(hop.b);
+    const tStart = Math.min(tA, tB);
+    if (tStart >= UNREACHED) {
+      p.t0 = UNREACHED;
+      p.t1 = UNREACHED + 1;
+      continue;
     }
+    const k = tA <= tB ? (p.k as number) : (p.n as number) - 1 - (p.k as number);
+    p.t0 = tStart + (k / (p.n as number)) * hop.minutes;
+    p.t1 = tStart + ((k + 1) / (p.n as number)) * hop.minutes;
   }
-}
-
-function features(fc: FeatureCollection<LineString, TransitSegProps>, i: number): TransitSegProps {
-  return fc.features[i].properties;
 }
 
 export interface StationProps {

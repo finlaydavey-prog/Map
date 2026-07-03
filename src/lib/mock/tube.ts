@@ -1,4 +1,4 @@
-import type { TubeLine, TubeNetwork, TubeStation } from '../types';
+import type { TubeHop, TubeLine, TubeNetwork, TubeStation } from '../types';
 
 /**
  * Mock TfL data: four lines through the demo area, official line colours,
@@ -118,15 +118,21 @@ export function buildTube(): TubeNetwork {
     lines: [],
   }));
   const stationIndex = new Map(stations.map((s, i) => [s.id, i] as const));
-  const lines: TubeLine[] = LINES.map((l) => ({
-    ...l,
-    color: TFL_COLOURS[l.id],
-  }));
-  for (const line of lines) {
-    for (const sid of line.stations) {
+  const lines: TubeLine[] = LINES.map((l) => ({ id: l.id, name: l.name, color: TFL_COLOURS[l.id] }));
+  const hops: TubeHop[] = [];
+  LINES.forEach((l, li) => {
+    for (const sid of l.stations) {
       const s = stations[stationIndex.get(sid)!];
-      if (!s.lines.includes(line.id)) s.lines.push(line.id);
+      if (!s.lines.includes(l.id)) s.lines.push(l.id);
     }
-  }
-  return { lines, stations, stationIndex };
+    for (let i = 1; i < l.stations.length; i++) {
+      hops.push({
+        line: li,
+        a: stationIndex.get(l.stations[i - 1])!,
+        b: stationIndex.get(l.stations[i])!,
+        minutes: l.hopMinutes,
+      });
+    }
+  });
+  return { lines, stations, hops, stationIndex };
 }

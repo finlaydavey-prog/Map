@@ -2,10 +2,10 @@ import { KM_PER_DEG_LAT, KM_PER_DEG_LNG } from '../geo';
 import type { LngLat, TubeNetwork } from '../types';
 
 /**
- * Station reach times without the mock street graph: walk straight to any
- * station (detour-corrected), then ride hop-by-hop with interchange
- * penalties. This is exactly the shape the real TfL Journey Planner data
- * will slot into later — swap the hop times for API journey times.
+ * Station reach times without a street graph: walk straight to any station
+ * (detour-corrected), then ride the hop graph with interchange penalties.
+ * Hop times come from the TfL snapshot (distance-derived); swapping in real
+ * Journey Planner timings later only changes those numbers.
  */
 
 const WALK_KMH = 4.8;
@@ -14,40 +14,74 @@ const STATION_ENTRY_MIN = 2.5; // enter + reach platform
 const INTERCHANGE_MIN = 3.5;
 const STATION_EXIT_MIN = 1.0;
 
+class Heap {
+  private d: number[] = [];
+  private v: number[] = [];
+  size = 0;
+  push(dist: number, val: number) {
+    let i = this.size++;
+    this.d[i] = dist;
+    this.v[i] = val;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.d[p] <= this.d[i]) break;
+      [this.d[i], this.d[p]] = [this.d[p], this.d[i]];
+      [this.v[i], this.v[p]] = [this.v[p], this.v[i]];
+      i = p;
+    }
+  }
+  pop(): [number, number] {
+    const top: [number, number] = [this.d[0], this.v[0]];
+    this.size--;
+    if (this.size > 0) {
+      this.d[0] = this.d[this.size];
+      this.v[0] = this.v[this.size];
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < this.size && this.d[l] < this.d[m]) m = l;
+        if (r < this.size && this.d[r] < this.d[m]) m = r;
+        if (m === i) break;
+        [this.d[i], this.d[m]] = [this.d[m], this.d[i]];
+        [this.v[i], this.v[m]] = [this.v[m], this.v[i]];
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
 export function computeTransitStationTimes(tube: TubeNetwork, origin: LngLat): Float32Array {
   const S = tube.stations.length;
-  // platform node per (line, station); lobby node per station
-  const platforms: Array<{ line: number; si: number }> = [];
-  const pid = new Map<string, number>();
-  tube.lines.forEach((line, li) => {
-    line.stations.forEach((sid) => {
-      const si = tube.stationIndex.get(sid)!;
-      pid.set(`${li}:${si}`, S + platforms.length);
-      platforms.push({ line: li, si });
-    });
-  });
-  const total = S + platforms.length;
+
+  // lobby node per station (0..S-1), platform node per (line, station)
+  const platformId = new Map<string, number>();
+  for (const h of tube.hops) {
+    for (const si of [h.a, h.b]) {
+      const key = `${h.line}:${si}`;
+      if (!platformId.has(key)) platformId.set(key, S + platformId.size);
+    }
+  }
+  const total = S + platformId.size;
   const adj: Array<Array<[number, number]>> = Array.from({ length: total }, () => []);
 
-  tube.lines.forEach((line, li) => {
-    let prev = -1;
-    for (const sid of line.stations) {
-      const si = tube.stationIndex.get(sid)!;
-      const p = pid.get(`${li}:${si}`)!;
-      // lobby <-> platform: half the interchange each way
-      adj[si].push([p, INTERCHANGE_MIN / 2]);
-      adj[p].push([si, INTERCHANGE_MIN / 2]);
-      if (prev >= 0) {
-        adj[prev].push([p, line.hopMinutes]);
-        adj[p].push([prev, line.hopMinutes]);
-      }
-      prev = p;
-    }
-  });
+  for (const [key, pid] of platformId) {
+    const si = Number(key.split(':')[1]);
+    // lobby <-> platform: half the interchange penalty each way
+    adj[si].push([pid, INTERCHANGE_MIN / 2]);
+    adj[pid].push([si, INTERCHANGE_MIN / 2]);
+  }
+  for (const h of tube.hops) {
+    const pa = platformId.get(`${h.line}:${h.a}`)!;
+    const pb = platformId.get(`${h.line}:${h.b}`)!;
+    adj[pa].push([pb, h.minutes]);
+    adj[pb].push([pa, h.minutes]);
+  }
 
   const dist = new Float64Array(total).fill(Infinity);
-  // seed: walk from origin to every station lobby
-  const queue: Array<[number, number]> = [];
+  const heap = new Heap();
   tube.stations.forEach((s, si) => {
     const dx = (s.pos[0] - origin[0]) * KM_PER_DEG_LNG;
     const dy = (s.pos[1] - origin[1]) * KM_PER_DEG_LAT;
@@ -55,23 +89,17 @@ export function computeTransitStationTimes(tube: TubeNetwork, origin: LngLat): F
     const d = walk + STATION_ENTRY_MIN;
     if (d < dist[si]) {
       dist[si] = d;
-      queue.push([d, si]);
+      heap.push(d, si);
     }
   });
-
-  // small graph: array-based Dijkstra is plenty
-  queue.sort((a, b) => a[0] - b[0]);
-  const settled = new Uint8Array(total);
-  while (queue.length > 0) {
-    queue.sort((a, b) => a[0] - b[0]);
-    const [d, u] = queue.shift()!;
-    if (settled[u] || d > dist[u]) continue;
-    settled[u] = 1;
+  while (heap.size > 0) {
+    const [d, u] = heap.pop();
+    if (d > dist[u]) continue;
     for (const [v, w] of adj[u]) {
       const nd = d + w;
       if (nd < dist[v]) {
         dist[v] = nd;
-        queue.push([nd, v]);
+        heap.push(nd, v);
       }
     }
   }

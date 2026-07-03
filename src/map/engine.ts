@@ -1,20 +1,20 @@
 import type maplibregl from 'maplibre-gl';
 import type { FeatureCollection, LineString, Point } from 'geojson';
 import { profileAt, profilesFromRings, ringFromProfile, type Profile } from '../lib/bands';
-import { LIVE, LIVE_BOUNDS, MAPBOX_TOKEN, TRANSIT_BBOX } from '../lib/config';
+import { LIVE, LIVE_BOUNDS, MAPBOX_TOKEN } from '../lib/config';
 import { KM_PER_DEG_LAT, KM_PER_DEG_LNG } from '../lib/geo';
 import { assignStreetTimes, harvestStreets } from '../lib/live/harvest';
 import { radialField, transitField, type TimeField } from '../lib/live/timeField';
 import { computeTransitStationTimes } from '../lib/live/transitLite';
 import { buildCity, distToNetworkKm } from '../lib/mock/city';
-import { buildTube } from '../lib/mock/tube';
+import { loadTubeNetwork } from '../lib/tube/load';
 import {
   BAND_MINUTES,
   MapboxIsochroneProvider,
   MockIsochroneProvider,
 } from '../lib/providers/isochrone';
 import { computeReach, UNREACHED, type ReachResult } from '../lib/reach';
-import type { IsochroneProvider, LngLat, TravelMode } from '../lib/types';
+import type { IsochroneProvider, LngLat, TravelMode, TubeNetwork } from '../lib/types';
 import {
   buildStationCollection,
   buildStreetCollection,
@@ -114,7 +114,7 @@ export class GlowEngine {
   private gl: GlModule;
   private live = LIVE;
 
-  private tube = buildTube();
+  private tube: TubeNetwork;
   // mock-mode data (only built when running keyless)
   private city = this.live ? null : buildCity();
   private provider: IsochroneProvider;
@@ -159,24 +159,29 @@ export class GlowEngine {
 
   /** Async factory: dynamically loads mapbox-gl (token present) or maplibre-gl (mock). */
   static async create(container: HTMLElement, initial: EngineState, cb: EngineCallbacks): Promise<GlowEngine> {
-    let gl: GlModule;
-    if (LIVE) {
-      const mod = (await import('mapbox-gl')).default;
-      (mod as { accessToken: string }).accessToken = MAPBOX_TOKEN!;
-      gl = mod as unknown as GlModule;
-    } else {
-      gl = (await import('maplibre-gl')).default as GlModule;
-    }
-    return new GlowEngine(gl, container, initial, cb);
+    const [gl, tube] = await Promise.all([
+      (async (): Promise<GlModule> => {
+        if (LIVE) {
+          const mod = (await import('mapbox-gl')).default;
+          (mod as { accessToken: string }).accessToken = MAPBOX_TOKEN!;
+          return mod as unknown as GlModule;
+        }
+        return (await import('maplibre-gl')).default as GlModule;
+      })(),
+      loadTubeNetwork(),
+    ]);
+    return new GlowEngine(gl, tube, container, initial, cb);
   }
 
   private constructor(
     gl: GlModule,
+    tube: TubeNetwork,
     container: HTMLElement,
     initial: EngineState,
     private cb: EngineCallbacks,
   ) {
     this.gl = gl;
+    this.tube = tube;
     this.state = { ...initial };
     this.provider = this.live
       ? new MapboxIsochroneProvider(MAPBOX_TOKEN!)
@@ -546,8 +551,8 @@ export class GlowEngine {
     if (mode === 'transit') {
       const sA = computeTransitStationTimes(this.tube, originA);
       const sB = originB ? computeTransitStationTimes(this.tube, originB) : null;
-      this.fieldA = transitField(originA, this.tube, sA, TRANSIT_BBOX);
-      this.fieldB = originB && sB ? transitField(originB, this.tube, sB, TRANSIT_BBOX) : null;
+      this.fieldA = transitField(originA, this.tube, sA, LIVE_BOUNDS);
+      this.fieldB = originB && sB ? transitField(originB, this.tube, sB, LIVE_BOUNDS) : null;
       this.profilesA = null;
       this.profilesB = null;
       stationT = (si) => Math.min(sA[si], sB ? sB[si] : UNREACHED);
@@ -580,7 +585,7 @@ export class GlowEngine {
     // area stat
     this.areaScale = 1;
     this.cumArea = this.fieldB
-      ? gridUnionArea([this.fieldA!, this.fieldB], mode === 'transit' ? TRANSIT_BBOX : LIVE_BOUNDS)
+      ? gridUnionArea([this.fieldA!, this.fieldB], LIVE_BOUNDS)
       : this.fieldA!.areaByMinute();
 
     // stamp times onto whatever streets are currently harvested

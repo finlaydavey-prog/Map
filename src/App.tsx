@@ -10,7 +10,7 @@ import { LinkIcon, PlusIcon, XIcon } from './components/icons';
 import { LIVE, MAPBOX_TOKEN } from './lib/config';
 import { mapboxGeocode } from './lib/live/geocode';
 import { searchPlaces } from './lib/mock/places';
-import { TFL_COLOURS } from './lib/mock/tube';
+import { loadTransitLegend } from './lib/tube/load';
 import type { LiveStats } from './map/engine';
 import { PALETTE_B, PALETTES } from './map/palette';
 import type { LngLat, TravelMode } from './lib/types';
@@ -21,13 +21,6 @@ const DEFAULT_ORIGIN: LngLat = [-0.1337, 51.5136]; // Soho
 const searchProvider = LIVE
   ? (q: string) => mapboxGeocode(MAPBOX_TOKEN!, q)
   : async (q: string) => searchPlaces(q);
-
-const TRANSIT_LEGEND: Array<[string, string]> = [
-  ['Central', TFL_COLOURS.central],
-  ['Victoria', TFL_COLOURS.victoria],
-  ['Jubilee', TFL_COLOURS.jubilee],
-  ['Elizabeth', TFL_COLOURS.elizabeth],
-];
 
 export default function App() {
   const initial = useRef(readShareState());
@@ -48,6 +41,11 @@ export default function App() {
   });
   const mapRef = useRef<MapViewHandle>(null);
   const toastId = useRef(0);
+  const [legend, setLegend] = useState<Array<[string, string]>>([]);
+
+  useEffect(() => {
+    loadTransitLegend().then(setLegend).catch(() => {});
+  }, []);
 
   const toast = useCallback((message: string) => {
     const id = ++toastId.current;
@@ -146,11 +144,11 @@ export default function App() {
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <div className="flex flex-wrap gap-x-3 gap-y-1 px-0.5 pb-0.5">
-                  {TRANSIT_LEGEND.map(([name, color]) => (
-                    <span key={name} className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                      <span className="h-[3px] w-4 rounded-full" style={{ background: color }} />
-                      {name}
+                <div className="flex max-h-24 flex-wrap gap-x-2.5 gap-y-1 overflow-y-auto px-0.5 pb-0.5">
+                  {legend.map(([name, color]) => (
+                    <span key={name} className="flex items-center gap-1 text-[9px] text-slate-500">
+                      <span className="h-[3px] w-3.5 rounded-full" style={{ background: color }} />
+                      {name.replace(' line', '')}
                     </span>
                   ))}
                 </div>

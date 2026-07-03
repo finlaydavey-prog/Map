@@ -94,19 +94,17 @@ export function computeReach(
   const N = city.nodes.length;
   const S = tube.stations.length;
 
-  // platform node ids: one per (line, station-position)
-  const platforms: Array<{ line: number; si: number }> = [];
+  // platform node ids: one per (line, station) discovered from the hop graph
   const platformId = new Map<string, number>();
   if (mode === 'transit') {
-    tube.lines.forEach((line, li) => {
-      line.stations.forEach((sid) => {
-        const si = tube.stationIndex.get(sid)!;
-        platformId.set(`${li}:${si}`, N + S + platforms.length);
-        platforms.push({ line: li, si });
-      });
-    });
+    for (const h of tube.hops) {
+      for (const si of [h.a, h.b]) {
+        const key = `${h.line}:${si}`;
+        if (!platformId.has(key)) platformId.set(key, N + S + platformId.size);
+      }
+    }
   }
-  const total = N + (mode === 'transit' ? S + platforms.length : 0);
+  const total = N + (mode === 'transit' ? S + platformId.size : 0);
 
   type Arc = [to: number, minutes: number];
   const adj: Arc[][] = new Array(total);
@@ -130,21 +128,18 @@ export function computeReach(
       adj[n].push([N + si, cost]);
       adj[N + si].push([n, cost]);
     });
-    // lobby <-> platforms, platform hops along each line
-    tube.lines.forEach((line, li) => {
-      let prev = -1;
-      for (const sid of line.stations) {
-        const si = tube.stationIndex.get(sid)!;
-        const pid = platformId.get(`${li}:${si}`)!;
-        adj[N + si].push([pid, PLATFORM_MINUTES]);
-        adj[pid].push([N + si, PLATFORM_MINUTES]);
-        if (prev >= 0) {
-          adj[prev].push([pid, line.hopMinutes]);
-          adj[pid].push([prev, line.hopMinutes]);
-        }
-        prev = pid;
-      }
-    });
+    // lobby <-> platforms, then ride edges along every hop
+    for (const [key, pid] of platformId) {
+      const si = Number(key.split(':')[1]);
+      adj[N + si].push([pid, PLATFORM_MINUTES]);
+      adj[pid].push([N + si, PLATFORM_MINUTES]);
+    }
+    for (const h of tube.hops) {
+      const pa = platformId.get(`${h.line}:${h.a}`)!;
+      const pb = platformId.get(`${h.line}:${h.b}`)!;
+      adj[pa].push([pb, h.minutes]);
+      adj[pb].push([pa, h.minutes]);
+    }
   }
 
   const dist = new Float64Array(total).fill(Infinity);

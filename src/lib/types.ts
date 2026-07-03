@@ -62,6 +62,7 @@ export interface TubeStation {
   id: string;
   name: string;
   pos: LngLat;
+  /** line ids serving this station (length > 1 -> interchange) */
   lines: string[];
 }
 
@@ -69,14 +70,21 @@ export interface TubeLine {
   id: string;
   name: string;
   color: string;
-  /** ordered station ids */
-  stations: string[];
-  /** minutes between adjacent stations */
-  hopMinutes: number;
+}
+
+/** one ride between adjacent stations on one line (branches are just hops) */
+export interface TubeHop {
+  /** index into TubeNetwork.lines */
+  line: number;
+  /** station indices */
+  a: number;
+  b: number;
+  minutes: number;
 }
 
 export interface TubeNetwork {
   lines: TubeLine[];
   stations: TubeStation[];
+  hops: TubeHop[];
   stationIndex: Map<string, number>;
 }
