@@ -7,6 +7,9 @@ import { StatCard } from './components/StatCard';
 import { TimeSlider } from './components/TimeSlider';
 import { Toasts, type Toast } from './components/Toasts';
 import { LinkIcon, PlusIcon, XIcon } from './components/icons';
+import { LIVE, MAPBOX_TOKEN } from './lib/config';
+import { mapboxGeocode } from './lib/live/geocode';
+import { searchPlaces } from './lib/mock/places';
 import { TFL_COLOURS } from './lib/mock/tube';
 import type { LiveStats } from './map/engine';
 import { PALETTE_B, PALETTES } from './map/palette';
@@ -14,6 +17,10 @@ import type { LngLat, TravelMode } from './lib/types';
 import { readShareState, writeShareState } from './lib/url';
 
 const DEFAULT_ORIGIN: LngLat = [-0.1337, 51.5136]; // Soho
+
+const searchProvider = LIVE
+  ? (q: string) => mapboxGeocode(MAPBOX_TOKEN!, q)
+  : async (q: string) => searchPlaces(q);
 
 const TRANSIT_LEGEND: Array<[string, string]> = [
   ['Central', TFL_COLOURS.central],
@@ -55,7 +62,7 @@ export default function App() {
   const handleMapClick = useCallback(
     (pos: LngLat) => {
       if (!mapRef.current?.isInsideDemoArea(pos)) {
-        toast('That spot is outside the prototype area — try central London.');
+        toast(LIVE ? 'That spot is outside Greater London.' : 'That spot is outside the prototype area — try central London.');
         return;
       }
       if (compareArmed) {
@@ -71,7 +78,7 @@ export default function App() {
   const handleOriginDragged = useCallback(
     (which: 'a' | 'b', pos: LngLat) => {
       if (!mapRef.current?.isInsideDemoArea(pos)) {
-        toast('Outside the prototype area — snapping back.');
+        toast(LIVE ? 'Outside Greater London — snapping back.' : 'Outside the prototype area — snapping back.');
         // fresh array refs force the marker back to its previous spot
         if (which === 'a') setOriginA((p) => [...p] as LngLat);
         else setOriginB((p) => (p ? ([...p] as LngLat) : p));
@@ -105,6 +112,7 @@ export default function App() {
         onStats={setStats}
         onMapClick={handleMapClick}
         onOriginDragged={handleOriginDragged}
+        onToast={toast}
       />
 
       <Toasts toasts={toasts} />
@@ -121,6 +129,7 @@ export default function App() {
           </div>
 
           <SearchBox
+            search={searchProvider}
             onSelect={(p) => {
               setOriginA(p.pos);
               mapRef.current?.flyTo(p.pos);

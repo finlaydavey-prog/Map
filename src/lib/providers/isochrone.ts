@@ -9,6 +9,72 @@ function cacheKey(origin: LngLat, mode: TravelMode, minutes: number[]): string {
   return `${mode}:${origin[0].toFixed(4)},${origin[1].toFixed(4)}:${minutes.join('-')}`;
 }
 
+const MAPBOX_PROFILES: Partial<Record<TravelMode, string>> = {
+  drive: 'driving',
+  walk: 'walking',
+  cycle: 'cycling',
+};
+
+/**
+ * Real isochrones from the Mapbox Isochrone API (drive / walk / cycle).
+ * The API caps each request at 4 contours, so the 6 coarse bands are fetched
+ * as two parallel batched requests, then cached — the slider never refetches.
+ * Transit is not supported by Mapbox; see TfL/Geoapify notes below.
+ */
+export class MapboxIsochroneProvider implements IsochroneProvider {
+  readonly id = 'mapbox';
+  private cache = new Map<string, IsochroneBand[]>();
+
+  constructor(private token: string) {}
+
+  supports(mode: TravelMode): boolean {
+    return mode in MAPBOX_PROFILES;
+  }
+
+  async fetchBands(origin: LngLat, mode: TravelMode, minutes: number[]): Promise<IsochroneBand[]> {
+    const key = cacheKey(origin, mode, minutes);
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+
+    const profile = MAPBOX_PROFILES[mode];
+    if (!profile) throw new Error(`Mapbox Isochrone does not support mode "${mode}"`);
+
+    const chunks: number[][] = [];
+    for (let i = 0; i < minutes.length; i += 4) chunks.push(minutes.slice(i, i + 4));
+
+    const byContour = new Map<number, LngLat[]>();
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const url =
+          `https://api.mapbox.com/isochrone/v1/mapbox/${profile}/` +
+          `${origin[0].toFixed(6)},${origin[1].toFixed(6)}` +
+          `?contours_minutes=${chunk.join(',')}&polygons=true&denoise=1&access_token=${this.token}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new Error(`Isochrone request failed (${res.status}): ${body.slice(0, 140)}`);
+        }
+        const json = (await res.json()) as {
+          features: Array<{ properties: { contour: number }; geometry: { type: string; coordinates: number[][][] } }>;
+        };
+        for (const f of json.features) {
+          // polygons=true -> Polygon geometry; outer ring only
+          if (f.geometry.type === 'Polygon' && f.geometry.coordinates[0]?.length > 3) {
+            byContour.set(f.properties.contour, f.geometry.coordinates[0] as LngLat[]);
+          }
+        }
+      }),
+    );
+
+    const bands: IsochroneBand[] = minutes
+      .filter((m) => byContour.has(m))
+      .map((m) => ({ minutes: m, ring: byContour.get(m)! }));
+    if (bands.length === 0) throw new Error('Isochrone response contained no usable contours');
+    this.cache.set(key, bands);
+    return bands;
+  }
+}
+
 /**
  * Mock provider: contours are derived from the bundled street/tube graph and
  * returned after a simulated network delay, so the loading choreography

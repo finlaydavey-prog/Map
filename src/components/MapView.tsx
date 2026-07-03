@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { GlowEngine, type EngineCallbacks, type LiveStats } from '../map/engine';
 import type { LngLat, TravelMode } from '../lib/types';
 
@@ -16,6 +17,7 @@ interface Props {
   onStats(stats: LiveStats): void;
   onMapClick(pos: LngLat): void;
   onOriginDragged(which: 'a' | 'b', pos: LngLat): void;
+  onToast(message: string): void;
 }
 
 export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, ref) {
@@ -25,26 +27,43 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(props, 
     onStats: props.onStats,
     onMapClick: props.onMapClick,
     onOriginDragged: props.onOriginDragged,
+    onToast: props.onToast,
   });
   cbs.current.onStats = props.onStats;
   cbs.current.onMapClick = props.onMapClick;
   cbs.current.onOriginDragged = props.onOriginDragged;
+  cbs.current.onToast = props.onToast;
+
+  const latest = useRef({ originA: props.originA, originB: props.originB, mode: props.mode, minutes: props.minutes });
+  latest.current = { originA: props.originA, originB: props.originB, mode: props.mode, minutes: props.minutes };
 
   useEffect(() => {
     if (!container.current) return;
-    const e = new GlowEngine(
+    let cancelled = false;
+    let created: GlowEngine | null = null;
+    GlowEngine.create(
       container.current,
       { originA: props.originA, originB: props.originB, mode: props.mode, minutes: props.minutes },
       {
         onStats: (s) => cbs.current.onStats(s),
         onMapClick: (p) => cbs.current.onMapClick(p),
         onOriginDragged: (w, p) => cbs.current.onOriginDragged(w, p),
+        onToast: (m) => cbs.current.onToast(m),
       },
-    );
-    engine.current = e;
+    ).then((e) => {
+      if (cancelled) {
+        e.destroy();
+        return;
+      }
+      created = e;
+      engine.current = e;
+      // catch up on any prop changes that landed while the engine was loading
+      e.update(latest.current);
+    });
     return () => {
+      cancelled = true;
       engine.current = null;
-      e.destroy();
+      created?.destroy();
     };
     // engine is created once; later prop changes flow through engine.update below
     // eslint-disable-next-line react-hooks/exhaustive-deps

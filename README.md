@@ -8,18 +8,29 @@ white casing, like a proper transit map) act as arteries: the wave travels
 station-to-station along each line, then blooms into the streets around every
 reached station.
 
-**This is the mock-data prototype.** It runs with zero API keys so the
-signature animation, 1-minute slider interpolation, transit spread and visual
-style can be reviewed and tuned before wiring in real providers. Everything
-except the data source already behaves like the final product.
+The app runs in one of two modes, chosen at build time:
+
+- **Live mode** (`VITE_MAPBOX_TOKEN` set): real Mapbox light basemap, real
+  street geometry harvested from the vector tiles, real Mapbox Isochrone
+  contours (drive / walk / cycle), real Mapbox Geocoding search. Transit
+  reachability still uses the built-in 4-line tube model (real TfL colours
+  and approximate real station coordinates) until a TfL API key is wired in.
+- **Mock mode** (no token): fully offline procedural London — the original
+  keyless prototype, kept working so the animation can always be demoed and
+  tuned without quota.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev        # open the printed localhost URL
-npm run build      # type-check + production bundle
+cp .env.example .env   # put your Mapbox pk. token in VITE_MAPBOX_TOKEN (or leave empty for mock mode)
+npm run dev            # open the printed localhost URL
+npm run build          # type-check + production bundle
 ```
+
+For the GitHub Pages deployment, set a repository **Actions secret** named
+`MAPBOX_TOKEN`; the workflow injects it at build time. Use a URL-restricted
+public token — it ships in the client bundle either way.
 
 ## What's in the prototype
 
@@ -50,7 +61,24 @@ npm run build      # type-check + production bundle
 - Errors (clicks outside the demo area, clipboard failures) surface as inline
   glass toasts — never browser alerts.
 
-## Mock data
+## How live mode works
+
+- `MapboxIsochroneProvider` fetches the 6 coarse bands (4 contours max per
+  request → 2 batched calls), cached per (origin, mode); every 1-minute step
+  is interpolated client-side via the band→radial-profile machinery, exactly
+  as in mock mode. Slider movement never touches the network.
+- Street segments are **harvested from the basemap's own vector tiles**
+  (`composite`/`road`) on map idle, deduped, viewport-filtered and
+  budget-capped (majors first, minors stride-sampled), then stamped with
+  reach times from a `TimeField` — radial profile inversion for
+  drive/walk/cycle, multi-centre station blooms for transit — and fed into
+  the same GeoJSON source + GPU paint expressions the mock uses.
+- Transit station times come from a small station-graph Dijkstra
+  (`transitLite.ts`): walk to any station, ride hop-by-hop with interchange
+  penalties. Swapping in TfL Journey Planner timings later only changes the
+  hop costs.
+
+## Mock data (keyless mode)
 
 | Real thing | Mock stand-in |
 | --- | --- |
