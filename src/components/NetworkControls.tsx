@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { AccessMode, JourneyOptions, TransitMethod } from '../lib/types';
+import { ANY_CHANGES, type AccessMode, type JourneyOptions, type TransitMethod } from '../lib/types';
 import { BikeIcon, WalkIcon } from './icons';
 
 interface MethodChip {
-  key: TransitMethod | 'bus' | 'rail';
+  key: TransitMethod;
   label: string;
   color: string;
   soon?: boolean;
@@ -14,8 +14,8 @@ const CHIPS: MethodChip[] = [
   { key: 'elizabeth-line', label: 'Elizabeth', color: '#6950a1' },
   { key: 'dlr', label: 'DLR', color: '#00a4a7' },
   { key: 'overground', label: 'Overground', color: '#ee7c0e' },
-  { key: 'bus', label: 'Bus', color: '#dc241f', soon: true },
-  { key: 'rail', label: 'Rail', color: '#5d6062', soon: true },
+  { key: 'bus', label: 'Bus', color: '#dc241f' },
+  { key: 'national-rail', label: 'Rail', color: '#3e5a75' },
 ];
 
 interface Props {
@@ -144,6 +144,48 @@ export function NetworkControls({ options, onChange }: Props) {
             onCommit={(v) => onChange({ ...options, maxAccessMin: v })}
           />
         </span>
+      </div>
+
+      {/* changes budget + journey direction */}
+      <div className="flex gap-2">
+        <div className="flex flex-1 items-center gap-2 rounded-xl bg-slate-900/[0.04] px-2 py-1.5 ring-1 ring-slate-900/10">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Changes</span>
+          <div className="ml-auto flex overflow-hidden rounded-lg ring-1 ring-slate-900/10">
+            {([0, 1, 2, ANY_CHANGES] as const).map((c) => {
+              const on = options.maxChanges === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => onChange({ ...options, maxChanges: c })}
+                  aria-pressed={on}
+                  className={`px-2 py-0.5 text-[11px] font-semibold transition ${
+                    on ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {c === ANY_CHANGES ? 'Any' : c}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center overflow-hidden rounded-xl ring-1 ring-slate-900/10">
+          {(['depart', 'arrive'] as const).map((d) => {
+            const on = options.direction === d;
+            return (
+              <button
+                key={d}
+                onClick={() => onChange({ ...options, direction: d })}
+                aria-pressed={on}
+                title={d === 'depart' ? 'How far can I get FROM the pin' : 'Who can GET TO the pin in time'}
+                className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                  on ? 'bg-white text-slate-900 shadow-sm' : 'bg-slate-900/[0.04] text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                {d === 'depart' ? 'From' : 'To'}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

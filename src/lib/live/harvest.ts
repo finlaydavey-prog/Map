@@ -21,7 +21,9 @@ const ROAD_CLASSES = new Set([
 /** classes only meaningful on foot / by bike */
 const SOFT_CLASSES = new Set(['path', 'pedestrian', 'living_street']);
 
-const MAX_FEATURES = 14000;
+/** density stays constant while zooming out (tile thinning aside) */
+const MAX_FEATURES =
+  typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 12000 : 28000;
 
 function speedKmh(mode: TravelMode, major: boolean): number {
   switch (mode) {

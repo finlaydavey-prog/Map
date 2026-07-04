@@ -64,25 +64,43 @@ export interface TubeStation {
   pos: LngLat;
   /** line ids serving this station (length > 1 -> interchange) */
   lines: string[];
+  /** 'b' = bus stop, 's' (or absent) = rail-type station */
+  kind?: 'b' | 's';
 }
 
-/** toggleable transit networks (bus / national rail to come) */
-export type TransitMethod = 'tube' | 'elizabeth-line' | 'dlr' | 'overground';
+/** toggleable transit networks */
+export type TransitMethod = 'tube' | 'elizabeth-line' | 'dlr' | 'overground' | 'national-rail' | 'bus';
 
 /** how the user reaches (and leaves) the transit network */
 export type AccessMode = 'walk' | 'cycle';
+
+/** "unlimited" sentinel for maxChanges */
+export const ANY_CHANGES = 99;
 
 export interface JourneyOptions {
   methods: Record<TransitMethod, boolean>;
   access: AccessMode;
   /** longest single access leg the user will accept, minutes */
   maxAccessMin: number;
+  /** maximum number of changes (boardings - 1); ANY_CHANGES = unlimited */
+  maxChanges: number;
+  /** depart = reach FROM the beacon; arrive = get TO the beacon by the budget */
+  direction: 'depart' | 'arrive';
 }
 
 export const DEFAULT_JOURNEY: JourneyOptions = {
-  methods: { tube: true, 'elizabeth-line': true, dlr: true, overground: true },
+  methods: {
+    tube: true,
+    'elizabeth-line': true,
+    dlr: true,
+    overground: true,
+    'national-rail': true,
+    bus: true,
+  },
   access: 'walk',
   maxAccessMin: 15,
+  maxChanges: ANY_CHANGES,
+  direction: 'depart',
 };
 
 export interface TubeLine {

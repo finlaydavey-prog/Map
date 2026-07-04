@@ -126,6 +126,27 @@ body,
   outline: none;
 }
 
+/* station hover tooltip */
+.station-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(20, 24, 32, 0.12);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  translate: -50% -100%;
+  box-shadow: 0 2px 8px rgba(30, 34, 44, 0.15);
+}
+
 /* maplibre chrome we don't want */
 .maplibregl-ctrl-attrib {
   display: none;

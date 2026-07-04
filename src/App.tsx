@@ -98,7 +98,13 @@ export default function App() {
     }
   }, [toast]);
 
-  const enabledLegend = legend.filter(([, , mode]) => options.methods[mode as keyof JourneyOptions['methods']]);
+  // legend: individual rapid-transit lines, rail operators collapsed to one
+  const enabledLegend = legend.filter(
+    ([, , mode]) => mode !== 'national-rail' && options.methods[mode as keyof JourneyOptions['methods']],
+  );
+  if (options.methods['national-rail'] && legend.some(([, , m]) => m === 'national-rail')) {
+    enabledLegend.push(['National Rail', '#3e5a75', 'national-rail']);
+  }
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-paper font-display text-slate-900">

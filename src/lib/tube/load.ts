@@ -5,7 +5,7 @@ import type { TubeNetwork, TubeStation } from '../types';
 interface Snapshot {
   generated: string;
   lines: Array<{ id: string; name: string; color: string; mode: string }>;
-  stations: Array<{ id: string; name: string; lat: number; lon: number }>;
+  stations: Array<{ id: string; name: string; lat: number; lon: number; k?: string }>;
   hops: Array<{ line: number; a: number; b: number; minutes: number; geom?: [number, number][] }>;
 }
 
@@ -31,6 +31,7 @@ function fromSnapshot(snap: Snapshot): TubeNetwork {
     name: s.name,
     pos: [s.lon, s.lat],
     lines: [],
+    kind: s.k === 'b' ? 'b' : 's',
   }));
   for (const h of snap.hops) {
     const lineId = snap.lines[h.line].id;

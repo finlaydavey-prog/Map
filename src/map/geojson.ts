@@ -53,7 +53,9 @@ export function buildTransitCollection(tube: TubeNetwork): FeatureCollection<Lin
   const features: Feature<LineString, TransitSegProps>[] = [];
   tube.hops.forEach((hop, hi) => {
     const geom = hop.geom ?? [tube.stations[hop.a].pos, tube.stations[hop.b].pos];
-    const n = Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
+    // bus corridor hops are short: one segment each keeps the source lean
+    const n =
+      tube.lines[hop.line].mode === 'bus' ? 1 : Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
     for (let k = 0; k < n; k++) {
       features.push({
         type: 'Feature',
@@ -103,6 +105,8 @@ export interface StationProps {
   name: string;
   t: number;
   interchange: 0 | 1;
+  /** 'b' bus stop, 's' rail-type station */
+  kind: string;
   [key: string]: number | string;
 }
 
@@ -111,7 +115,12 @@ export function buildStationCollection(tube: TubeNetwork): FeatureCollection<Poi
     type: 'FeatureCollection',
     features: tube.stations.map((s) => ({
       type: 'Feature',
-      properties: { name: s.name, t: UNREACHED, interchange: s.lines.length > 1 ? 1 : 0 },
+      properties: {
+        name: s.name,
+        t: UNREACHED,
+        interchange: s.lines.length > 1 && s.kind !== 'b' ? 1 : 0,
+        kind: s.kind ?? 's',
+      },
       geometry: { type: 'Point', coordinates: s.pos },
     })),
   };

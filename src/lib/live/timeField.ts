@@ -75,18 +75,20 @@ const minutesAt = (kmh: number, a: LngLat, b: LngLat): number => {
 };
 
 export interface AccessCaps {
-  /** how the origin end of the journey is covered */
+  /** how the beacon end of the journey is covered */
   mode: 'walk' | 'cycle';
   /** longest single access leg accepted, minutes */
   maxMin: number;
+  /** which end of the journey has the bike ('far' when arriving at the beacon) */
+  bikeLeg: 'origin' | 'far';
 }
 
 /**
  * Multi-centre transit field: a point is reached either directly from the
- * origin (by the chosen access mode), or by riding to a station and walking
- * out from it — whichever is fastest, respecting the time cap. Egress is
- * always on foot (the bike stays at the origin end) but shares the same
- * minutes tolerance.
+ * origin (single door-to-door leg by the chosen mode), or via a station and
+ * a final leg — on foot, or by bike when the bike lives at the far end
+ * (arrive-by mode). A spatial grid over the centres keeps lookups fast even
+ * with ~10k bus stops.
  */
 export function transitField(
   origin: LngLat,
@@ -96,23 +98,42 @@ export function transitField(
   bbox: [number, number, number, number],
   caps: AccessCaps,
 ): TimeField {
-  const centres: Array<{ pos: LngLat; t: number }> = [];
+  const egressKmh = caps.bikeLeg === 'far' && caps.mode === 'cycle' ? CYCLE_KMH : WALK_KMH;
+  // furthest a centre can matter for any point
+  const reachKm = ((caps.maxMin / 60) * egressKmh) / DETOUR;
+
+  // grid-bucket the reached centres
+  const CELL_KM = 0.75;
+  const cellLng = CELL_KM / KM_PER_DEG_LNG;
+  const cellLat = CELL_KM / KM_PER_DEG_LAT;
+  const grid = new Map<string, Array<{ pos: LngLat; t: number }>>();
   tube.stations.forEach((s, i) => {
-    if (stationMinutes[i] < UNREACHED) centres.push({ pos: s.pos, t: stationMinutes[i] });
+    if (stationMinutes[i] >= UNREACHED) return;
+    const key = `${Math.floor(s.pos[0] / cellLng)}:${Math.floor(s.pos[1] / cellLat)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key)!.push({ pos: s.pos, t: stationMinutes[i] });
   });
-  const accessKmh = caps.mode === 'cycle' ? CYCLE_KMH : WALK_KMH;
+  const ring = Math.ceil(reachKm / CELL_KM) + 1;
 
   const timeAt = (p: LngLat): number => {
     let best = UNREACHED;
-    // directly from the origin, by the chosen access mode
-    const direct = minutesAt(accessKmh, origin, p);
+    // directly from the origin, by the chosen access mode (door to door)
+    const direct = minutesAt(caps.mode === 'cycle' ? CYCLE_KMH : WALK_KMH, origin, p);
     if (direct <= caps.maxMin) best = direct;
-    // via a station, then walk out
-    for (const c of centres) {
-      const egress = minutesAt(WALK_KMH, c.pos, p);
-      if (egress > caps.maxMin) continue;
-      const t = c.t + egress;
-      if (t < best) best = t;
+    // via a nearby centre, then the final leg
+    const cx = Math.floor(p[0] / cellLng);
+    const cy = Math.floor(p[1] / cellLat);
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        const bucket = grid.get(`${cx + dx}:${cy + dy}`);
+        if (!bucket) continue;
+        for (const c of bucket) {
+          const egress = minutesAt(egressKmh, c.pos, p);
+          if (egress > caps.maxMin) continue;
+          const t = c.t + egress;
+          if (t < best) best = t;
+        }
+      }
     }
     return best;
   };

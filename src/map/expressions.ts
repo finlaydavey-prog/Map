@@ -87,16 +87,18 @@ export interface StationPaint {
   strokeWidth: E;
 }
 
-export function stationPaint(T: number, zoomK: number): StationPaint {
+export function stationPaint(T: number, zoomK: number, busScale: number): StationPaint {
   const u: E = ['-', T, ['get', 't']]; // minutes since reached
   const appear: E = clamp01(['/', u, 0.9]);
   const base: E = ['+', 2.4, ['*', 1.6, ['get', 'interchange']]];
   // overshoot pop when a station is first reached
   const pop: E = ['interpolate', ['linear'], u, 0, 0, 0.45, 1.45, 1.3, 1];
+  // bus stops render smaller, and not at all when zoomed out (busScale 0)
+  const kindK: E = ['case', ['==', ['get', 'kind'], 'b'], busScale, 1];
   return {
-    radius: ['*', base, zoomK, pop],
+    radius: ['*', base, zoomK, pop, kindK],
     opacity: appear,
     // every reached station gets a ring (white fill needs it); interchanges heavier
-    strokeWidth: ['*', ['+', 1.1, ['*', 0.9, ['get', 'interchange']]], zoomK, appear],
+    strokeWidth: ['*', ['+', 1.1, ['*', 0.9, ['get', 'interchange']]], zoomK, appear, kindK],
   };
 }

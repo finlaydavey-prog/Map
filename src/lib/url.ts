@@ -1,5 +1,5 @@
 import type { JourneyOptions, LngLat, TransitMethod } from './types';
-import { DEFAULT_JOURNEY } from './types';
+import { ANY_CHANGES, DEFAULT_JOURNEY } from './types';
 
 export interface ShareState {
   originA: LngLat;
@@ -8,7 +8,7 @@ export interface ShareState {
   options: JourneyOptions;
 }
 
-const METHODS: TransitMethod[] = ['tube', 'elizabeth-line', 'dlr', 'overground'];
+const METHODS: TransitMethod[] = ['tube', 'elizabeth-line', 'dlr', 'overground', 'national-rail', 'bus'];
 const fmt = (p: LngLat) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`; // lat,lng
 
 function parseLatLng(s: string | null): LngLat | null {
@@ -51,6 +51,8 @@ export function readShareState(): Partial<ShareState> {
       clampInt(q.get('mx'), 1, 60) ??
       (access === 'cycle' ? legacyCycle : clampInt(q.get('mw'), 1, 60)) ??
       DEFAULT_JOURNEY.maxAccessMin,
+    maxChanges: clampInt(q.get('mch'), 0, 2) ?? ANY_CHANGES,
+    direction: q.get('dir') === 'arrive' ? 'arrive' : 'depart',
   };
   const nets = q.get('nets');
   if (nets !== null) {
@@ -69,6 +71,8 @@ export function writeShareState(s: ShareState): void {
   q.set('nets', METHODS.filter((m) => s.options.methods[m]).join(','));
   q.set('am', s.options.access);
   q.set('mx', String(s.options.maxAccessMin));
+  if (s.options.maxChanges < ANY_CHANGES) q.set('mch', String(s.options.maxChanges));
+  if (s.options.direction === 'arrive') q.set('dir', 'arrive');
   try {
     window.history.replaceState(null, '', `${window.location.pathname}?${q.toString()}`);
   } catch {

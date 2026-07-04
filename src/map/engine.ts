@@ -152,6 +152,7 @@ export class GlowEngine {
   private lastStatsKey = '';
   private destroyed = false;
   private harvestTimer: ReturnType<typeof setTimeout> | null = null;
+  private tooltip!: HTMLDivElement;
 
   /** Async factory: dynamically loads mapbox-gl (token present) or maplibre-gl (mock). */
   static async create(container: HTMLElement, initial: EngineState, cb: EngineCallbacks): Promise<GlowEngine> {
@@ -213,6 +214,21 @@ export class GlowEngine {
     } as never);
     this.map.touchZoomRotate.disableRotation();
     this.map.getCanvas().style.cursor = 'crosshair';
+
+    // hover tooltip: station name + minutes once reached
+    this.tooltip = document.createElement('div');
+    this.tooltip.className = 'station-tip';
+    container.appendChild(this.tooltip);
+    let tipThrottle = 0;
+    this.map.on('mousemove', (e) => {
+      const now = performance.now();
+      if (now - tipThrottle < 60) return;
+      tipThrottle = now;
+      this.updateTooltip(e.point.x, e.point.y);
+    });
+    this.map.on('mouseout', () => {
+      this.tooltip.style.opacity = '0';
+    });
 
     this.markerA = this.makeBeacon('a', initial.originA);
 
@@ -279,6 +295,28 @@ export class GlowEngine {
     this.markerA.setLngLat(next.originA);
 
     if (this.ready && (originChanged || optionsChanged)) this.recompute();
+  }
+
+  private updateTooltip(x: number, y: number): void {
+    if (!this.ready) return;
+    const feats = this.map.queryRenderedFeatures(
+      [
+        [x - 6, y - 6],
+        [x + 6, y + 6],
+      ],
+      { layers: ['stations-dot', 'stations-dim'] },
+    );
+    const f = feats?.[0];
+    if (!f) {
+      this.tooltip.style.opacity = '0';
+      return;
+    }
+    const t = Number(f.properties?.t ?? UNREACHED);
+    const name = String(f.properties?.name ?? '');
+    const reached = t < UNREACHED && t <= this.state.minutes;
+    this.tooltip.textContent = reached ? `${name} · ${Math.round(t)} min` : name;
+    this.tooltip.style.opacity = '1';
+    this.tooltip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y - 14)}px)`;
   }
 
   // ---------------------------------------------------------------- markers
@@ -385,7 +423,20 @@ export class GlowEngine {
     } as never);
 
     // transit sits ABOVE the street colouring and clearly wider (Google-maps
-    // style: the network reads as the primary structure)
+    // style); bus corridors render much thinner so they read as capillaries
+    const busThin = (thin: number, thick: number) =>
+      ['case', ['==', ['get', 'mode'], 'bus'], thin, thick] as never;
+    const transitWidth = [
+      'interpolate',
+      ['exponential', 1.6],
+      ['zoom'],
+      10,
+      busThin(1.0, 2.8),
+      13,
+      busThin(1.8, 4.8),
+      16,
+      busThin(3.0, 8),
+    ] as never;
     add({
       id: 'transit-casing',
       type: 'line',
@@ -404,8 +455,8 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 2.8, 13, 4.8, 16, 8],
-        'line-opacity': 0.22,
+        'line-width': transitWidth,
+        'line-opacity': busThin(0.08, 0.22),
       },
     } as never);
     add({
@@ -415,7 +466,7 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 2.8, 13, 4.8, 16, 8],
+        'line-width': transitWidth,
         'line-opacity': 0,
       },
     } as never);
@@ -426,7 +477,19 @@ export class GlowEngine {
       source: 'stations',
       paint: {
         'circle-color': COLORS.stationDim,
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1.7, 13, 2.7, 16, 4.2],
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          ['case', ['==', ['get', 'kind'], 'b'], 0, 1.7],
+          13,
+          ['case', ['==', ['get', 'kind'], 'b'], 0, 2.7],
+          13.5,
+          ['case', ['==', ['get', 'kind'], 'b'], 1.1, 2.9],
+          16,
+          ['case', ['==', ['get', 'kind'], 'b'], 2, 4.2],
+        ],
         'circle-opacity': 0.8,
       },
     } as never);
@@ -445,14 +508,17 @@ export class GlowEngine {
     } as never);
   }
 
-  /** disabled networks keep only their pale dim rendering */
+  /** disabled networks keep only their pale dim rendering; buses never get casing */
   private applyMethodFilter(): void {
     const enabled = Object.entries(this.state.options.methods)
       .filter(([, on]) => on)
       .map(([m]) => m);
-    const filter = ['in', ['get', 'mode'], ['literal', enabled]] as never;
-    this.map.setFilter('transit-core', filter);
-    this.map.setFilter('transit-casing', filter);
+    this.map.setFilter('transit-core', ['in', ['get', 'mode'], ['literal', enabled]] as never);
+    this.map.setFilter('transit-casing', [
+      'all',
+      ['in', ['get', 'mode'], ['literal', enabled]],
+      ['!=', ['get', 'mode'], 'bus'],
+    ] as never);
   }
 
   // -------------------------------------------------------------- harvesting
@@ -537,7 +603,11 @@ export class GlowEngine {
 
   private recomputeLive(): void {
     const { originA, originB, options } = this.state;
-    const caps = { mode: options.access, maxMin: options.maxAccessMin };
+    const caps = {
+      mode: options.access,
+      maxMin: options.maxAccessMin,
+      bikeLeg: (options.direction === 'arrive' ? 'far' : 'origin') as 'far' | 'origin',
+    };
 
     const sA = computeTransitStationTimes(this.tube, originA, options);
     const sB = originB ? computeTransitStationTimes(this.tube, originB, options) : null;
@@ -660,7 +730,7 @@ export class GlowEngine {
     map.setPaintProperty('streets-lit', 'line-opacity', sp.opacity as never, opts);
 
     map.setPaintProperty('transit-core', 'line-opacity', transitProgress(T) as never, opts);
-    const st = stationPaint(T, zoomLerp(z, 0.85, 1.35, 2.1));
+    const st = stationPaint(T, zoomLerp(z, 0.85, 1.35, 2.1), z < 13.5 ? 0 : 0.55);
     map.setPaintProperty('stations-dot', 'circle-radius', st.radius as never, opts);
     map.setPaintProperty('stations-dot', 'circle-opacity', st.opacity as never, opts);
     map.setPaintProperty('stations-dot', 'circle-stroke-width', st.strokeWidth as never, opts);
