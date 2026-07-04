@@ -423,19 +423,26 @@ export class GlowEngine {
     } as never);
 
     // transit sits ABOVE the street colouring and clearly wider (Google-maps
-    // style); bus corridors render much thinner so they read as capillaries
-    const busThin = (thin: number, thick: number) =>
-      ['case', ['==', ['get', 'mode'], 'bus'], thin, thick] as never;
+    // style); bus corridors read as capillaries, rail approaches stay quiet
+    const byMode = (bus: number, rail: number, rapid: number) =>
+      [
+        'case',
+        ['==', ['get', 'mode'], 'bus'],
+        bus,
+        ['==', ['get', 'mode'], 'national-rail'],
+        rail,
+        rapid,
+      ] as never;
     const transitWidth = [
       'interpolate',
       ['exponential', 1.6],
       ['zoom'],
       10,
-      busThin(1.0, 2.8),
+      byMode(1.0, 1.4, 2.8),
       13,
-      busThin(1.8, 4.8),
+      byMode(1.8, 2.4, 4.8),
       16,
-      busThin(3.0, 8),
+      byMode(3.0, 4.0, 8),
     ] as never;
     add({
       id: 'transit-casing',
@@ -456,7 +463,7 @@ export class GlowEngine {
       paint: {
         'line-color': ['get', 'color'],
         'line-width': transitWidth,
-        'line-opacity': busThin(0.08, 0.22),
+        'line-opacity': byMode(0.08, 0.1, 0.22),
       },
     } as never);
     add({
@@ -517,7 +524,7 @@ export class GlowEngine {
     this.map.setFilter('transit-casing', [
       'all',
       ['in', ['get', 'mode'], ['literal', enabled]],
-      ['!=', ['get', 'mode'], 'bus'],
+      ['!', ['in', ['get', 'mode'], ['literal', ['bus', 'national-rail']]]],
     ] as never);
   }
 
