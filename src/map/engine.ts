@@ -537,7 +537,7 @@ export class GlowEngine {
 
   private recomputeLive(): void {
     const { originA, originB, options } = this.state;
-    const caps = { maxWalkMin: options.maxWalkMin, maxCycleMin: options.maxCycleMin };
+    const caps = { mode: options.access, maxMin: options.maxAccessMin };
 
     const sA = computeTransitStationTimes(this.tube, originA, options);
     const sB = originB ? computeTransitStationTimes(this.tube, originB, options) : null;

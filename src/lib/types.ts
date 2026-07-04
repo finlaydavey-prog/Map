@@ -69,18 +69,20 @@ export interface TubeStation {
 /** toggleable transit networks (bus / national rail to come) */
 export type TransitMethod = 'tube' | 'elizabeth-line' | 'dlr' | 'overground';
 
+/** how the user reaches (and leaves) the transit network */
+export type AccessMode = 'walk' | 'cycle';
+
 export interface JourneyOptions {
   methods: Record<TransitMethod, boolean>;
-  /** longest single walk the user will accept, minutes */
-  maxWalkMin: number;
-  /** cycling budget for reaching the network (0 = no bike), minutes */
-  maxCycleMin: number;
+  access: AccessMode;
+  /** longest single access leg the user will accept, minutes */
+  maxAccessMin: number;
 }
 
 export const DEFAULT_JOURNEY: JourneyOptions = {
   methods: { tube: true, 'elizabeth-line': true, dlr: true, overground: true },
-  maxWalkMin: 15,
-  maxCycleMin: 0,
+  access: 'walk',
+  maxAccessMin: 15,
 };
 
 export interface TubeLine {

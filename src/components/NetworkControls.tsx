@@ -1,4 +1,6 @@
-import type { JourneyOptions, TransitMethod } from '../lib/types';
+import { useEffect, useState } from 'react';
+import type { AccessMode, JourneyOptions, TransitMethod } from '../lib/types';
+import { BikeIcon, WalkIcon } from './icons';
 
 interface MethodChip {
   key: TransitMethod | 'bus' | 'rail';
@@ -21,44 +23,61 @@ interface Props {
   onChange(options: JourneyOptions): void;
 }
 
-function NumberBox({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange(v: number): void;
-}) {
+/**
+ * Minutes input that tolerates editing: the box may be blank while typing
+ * (nothing is forced to 0) and NOTHING commits per keystroke — the value is
+ * applied on blur or Enter. Blank/invalid input reverts to the last good
+ * value; out-of-range numbers clamp.
+ */
+function MinutesBox({ value, min, max, onCommit }: { value: number; min: number; max: number; onCommit(v: number): void }) {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  // reflect outside changes (URL load, revert) while not editing
+  useEffect(() => {
+    if (!focused) setText(String(value));
+  }, [value, focused]);
+
+  const commit = () => {
+    setFocused(false);
+    const n = Number(text);
+    if (text === '' || !Number.isFinite(n)) {
+      setText(String(value)); // revert, never force 0
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, Math.round(n)));
+    setText(String(clamped));
+    onCommit(clamped);
+  };
+
   return (
-    <label className="flex flex-1 items-center justify-between gap-2 rounded-xl bg-slate-900/[0.04] px-2.5 py-1.5 ring-1 ring-slate-900/10">
-      <span className="text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
-      <span className="flex items-baseline gap-1">
-        <input
-          type="number"
-          inputMode="numeric"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => {
-            const n = Math.round(Number(e.target.value));
-            if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
-          }}
-          className="w-10 bg-transparent text-right font-mono text-sm font-semibold text-slate-900 outline-none tabular-nums"
-        />
-        <span className="text-[10px] text-slate-400">min</span>
-      </span>
-    </label>
+    <span className="flex items-baseline gap-1">
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={text}
+        onFocus={(e) => {
+          setFocused(true);
+          e.target.select();
+        }}
+        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+        className="w-10 bg-transparent text-right font-mono text-sm font-semibold text-slate-900 outline-none tabular-nums"
+        aria-label="Maximum access time in minutes"
+      />
+      <span className="text-[10px] text-slate-400">min</span>
+    </span>
   );
 }
 
 export function NetworkControls({ options, onChange }: Props) {
   const toggle = (key: TransitMethod) =>
     onChange({ ...options, methods: { ...options.methods, [key]: !options.methods[key] } });
+  const setAccess = (access: AccessMode) => onChange({ ...options, access });
 
   return (
     <div className="space-y-2">
@@ -94,21 +113,37 @@ export function NetworkControls({ options, onChange }: Props) {
           );
         })}
       </div>
-      <div className="flex gap-2">
-        <NumberBox
-          label="Max walk"
-          value={options.maxWalkMin}
-          min={1}
-          max={60}
-          onChange={(v) => onChange({ ...options, maxWalkMin: v })}
-        />
-        <NumberBox
-          label="Max cycle"
-          value={options.maxCycleMin}
-          min={0}
-          max={60}
-          onChange={(v) => onChange({ ...options, maxCycleMin: v })}
-        />
+
+      {/* access mode: walk OR cycle, one shared time budget */}
+      <div className="flex items-center gap-2 rounded-xl bg-slate-900/[0.04] px-2 py-1.5 ring-1 ring-slate-900/10">
+        <div className="flex overflow-hidden rounded-lg ring-1 ring-slate-900/10">
+          {(['walk', 'cycle'] as AccessMode[]).map((m) => {
+            const on = options.access === m;
+            const Icon = m === 'walk' ? WalkIcon : BikeIcon;
+            return (
+              <button
+                key={m}
+                onClick={() => setAccess(m)}
+                aria-pressed={on}
+                className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold capitalize transition ${
+                  on ? 'bg-white text-slate-900 shadow-sm' : 'bg-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {m}
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Max</span>
+          <MinutesBox
+            value={options.maxAccessMin}
+            min={1}
+            max={60}
+            onCommit={(v) => onChange({ ...options, maxAccessMin: v })}
+          />
+        </span>
       </div>
     </div>
   );

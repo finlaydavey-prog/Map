@@ -94,17 +94,14 @@ export function computeTransitStationTimes(
 
   const dist = new Float64Array(total).fill(Infinity);
   const heap = new Heap();
+  const accessKmh = options.access === 'cycle' ? CYCLE_KMH : WALK_KMH;
   tube.stations.forEach((s, si) => {
     if (!inService[si]) return;
     const dx = (s.pos[0] - origin[0]) * KM_PER_DEG_LNG;
     const dy = (s.pos[1] - origin[1]) * KM_PER_DEG_LAT;
     const km = Math.sqrt(dx * dx + dy * dy) * DETOUR;
-    const walk = (km / WALK_KMH) * 60;
-    const cycle = (km / CYCLE_KMH) * 60;
-    // access within the caps: walk, or cycle when a bike budget is set
-    let access = walk <= options.maxWalkMin ? walk : Infinity;
-    if (options.maxCycleMin > 0 && cycle <= options.maxCycleMin) access = Math.min(access, cycle);
-    if (!Number.isFinite(access)) return;
+    const access = (km / accessKmh) * 60;
+    if (access > options.maxAccessMin) return;
     const d = access + STATION_ENTRY_MIN;
     if (d < dist[si]) {
       dist[si] = d;

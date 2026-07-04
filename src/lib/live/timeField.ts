@@ -75,17 +75,18 @@ const minutesAt = (kmh: number, a: LngLat, b: LngLat): number => {
 };
 
 export interface AccessCaps {
-  /** longest single walk accepted, minutes */
-  maxWalkMin: number;
-  /** cycling budget from the origin (0 = no bike), minutes */
-  maxCycleMin: number;
+  /** how the origin end of the journey is covered */
+  mode: 'walk' | 'cycle';
+  /** longest single access leg accepted, minutes */
+  maxMin: number;
 }
 
 /**
  * Multi-centre transit field: a point is reached either directly from the
- * origin (walk, or cycle if a bike budget is set), or by riding to a station
- * and walking out from it — whichever is fastest, respecting the caps. This
- * is what makes the street colouring bloom around each station.
+ * origin (by the chosen access mode), or by riding to a station and walking
+ * out from it — whichever is fastest, respecting the time cap. Egress is
+ * always on foot (the bike stays at the origin end) but shares the same
+ * minutes tolerance.
  */
 export function transitField(
   origin: LngLat,
@@ -99,20 +100,17 @@ export function transitField(
   tube.stations.forEach((s, i) => {
     if (stationMinutes[i] < UNREACHED) centres.push({ pos: s.pos, t: stationMinutes[i] });
   });
+  const accessKmh = caps.mode === 'cycle' ? CYCLE_KMH : WALK_KMH;
 
   const timeAt = (p: LngLat): number => {
     let best = UNREACHED;
-    // directly from the origin: walk, or cycle when a bike budget exists
-    const walkDirect = minutesAt(WALK_KMH, origin, p);
-    if (walkDirect <= caps.maxWalkMin) best = walkDirect;
-    if (caps.maxCycleMin > 0) {
-      const cycleDirect = minutesAt(CYCLE_KMH, origin, p);
-      if (cycleDirect <= caps.maxCycleMin && cycleDirect < best) best = cycleDirect;
-    }
-    // via a station, then walk out (the bike stays at the origin end)
+    // directly from the origin, by the chosen access mode
+    const direct = minutesAt(accessKmh, origin, p);
+    if (direct <= caps.maxMin) best = direct;
+    // via a station, then walk out
     for (const c of centres) {
       const egress = minutesAt(WALK_KMH, c.pos, p);
-      if (egress > caps.maxWalkMin) continue;
+      if (egress > caps.maxMin) continue;
       const t = c.t + egress;
       if (t < best) best = t;
     }
