@@ -1,11 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import type { LiveStats } from '../map/engine';
-import type { ModePalette } from '../map/palette';
-import { PALETTE_B } from '../map/palette';
+import { ACCENT, OVERLAP_COLOR } from '../map/palette';
 
 interface Props {
   stats: LiveStats;
-  palette: ModePalette;
   compact?: boolean;
 }
 
@@ -21,7 +19,7 @@ function Row({ label, value, unit, accent }: { label: string; value: string; uni
   );
 }
 
-export function StatCard({ stats, palette, compact }: Props) {
+export function StatCard({ stats, compact }: Props) {
   const fmt = (n: number) => n.toLocaleString('en-GB');
   if (compact) {
     return (
@@ -38,7 +36,7 @@ export function StatCard({ stats, palette, compact }: Props) {
           <b className="text-slate-900">{stats.areaKm2.toFixed(1)}</b> km²
         </span>
         {stats.comparing && (
-          <span style={{ color: PALETTE_B.accent }}>
+          <span style={{ color: OVERLAP_COLOR }}>
             <b>{fmt(stats.overlapStreets)}</b> shared
           </span>
         )}
@@ -61,7 +59,7 @@ export function StatCard({ stats, palette, compact }: Props) {
               exit={{ opacity: 0 }}
               className="flex items-center gap-1.5 text-[10px] text-slate-500"
             >
-              <span className="h-1.5 w-1.5 animate-ping rounded-full" style={{ background: palette.accent }} />
+              <span className="h-1.5 w-1.5 animate-ping rounded-full" style={{ background: ACCENT }} />
               updating
             </motion.span>
           )}
@@ -70,7 +68,7 @@ export function StatCard({ stats, palette, compact }: Props) {
       <Row label="Streets lit" value={fmt(stats.streetsLit)} />
       {stats.stationsReached > 0 && <Row label="Stations" value={String(stats.stationsReached)} />}
       <Row label="Area" value={stats.areaKm2 >= 100 ? stats.areaKm2.toFixed(0) : stats.areaKm2.toFixed(1)} unit="km²" />
-      {stats.comparing && <Row label="Shared streets" value={fmt(stats.overlapStreets)} accent={PALETTE_B.accent} />}
+      {stats.comparing && <Row label="Shared streets" value={fmt(stats.overlapStreets)} accent={OVERLAP_COLOR} />}
     </motion.div>
   );
 }

@@ -66,10 +66,29 @@ export interface TubeStation {
   lines: string[];
 }
 
+/** toggleable transit networks (bus / national rail to come) */
+export type TransitMethod = 'tube' | 'elizabeth-line' | 'dlr' | 'overground';
+
+export interface JourneyOptions {
+  methods: Record<TransitMethod, boolean>;
+  /** longest single walk the user will accept, minutes */
+  maxWalkMin: number;
+  /** cycling budget for reaching the network (0 = no bike), minutes */
+  maxCycleMin: number;
+}
+
+export const DEFAULT_JOURNEY: JourneyOptions = {
+  methods: { tube: true, 'elizabeth-line': true, dlr: true, overground: true },
+  maxWalkMin: 15,
+  maxCycleMin: 0,
+};
+
 export interface TubeLine {
   id: string;
   name: string;
   color: string;
+  /** which toggleable method this line belongs to */
+  mode: TransitMethod;
 }
 
 /** one ride between adjacent stations on one line (branches are just hops) */
@@ -80,6 +99,8 @@ export interface TubeHop {
   a: number;
   b: number;
   minutes: number;
+  /** curved geometry through the route's neighbouring stations */
+  geom?: LngLat[];
 }
 
 export interface TubeNetwork {

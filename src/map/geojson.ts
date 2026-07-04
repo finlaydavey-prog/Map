@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import { UNREACHED } from '../lib/reach';
+import { slicePolyline } from '../lib/tube/curve';
 import type { CityModel, TubeNetwork } from '../lib/types';
 import { EDGE_MINOR } from '../lib/types';
 
@@ -32,6 +33,7 @@ export function buildStreetCollection(city: CityModel): FeatureCollection<LineSt
 
 export interface TransitSegProps {
   color: string;
+  mode: string;
   /** hop index into TubeNetwork.hops + sub-segment position within it */
   hop: number;
   k: number;
@@ -50,29 +52,21 @@ export interface TransitSegProps {
 export function buildTransitCollection(tube: TubeNetwork): FeatureCollection<LineString, TransitSegProps> {
   const features: Feature<LineString, TransitSegProps>[] = [];
   tube.hops.forEach((hop, hi) => {
-    const a = tube.stations[hop.a].pos;
-    const b = tube.stations[hop.b].pos;
+    const geom = hop.geom ?? [tube.stations[hop.a].pos, tube.stations[hop.b].pos];
     const n = Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
     for (let k = 0; k < n; k++) {
-      const f0 = k / n;
-      const f1 = (k + 1) / n;
       features.push({
         type: 'Feature',
         properties: {
           color: tube.lines[hop.line].color,
+          mode: tube.lines[hop.line].mode,
           hop: hi,
           k,
           n,
           t0: UNREACHED,
           t1: UNREACHED + 1,
         },
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [a[0] + (b[0] - a[0]) * f0, a[1] + (b[1] - a[1]) * f0],
-            [a[0] + (b[0] - a[0]) * f1, a[1] + (b[1] - a[1]) * f1],
-          ],
-        },
+        geometry: { type: 'LineString', coordinates: slicePolyline(geom, k / n, (k + 1) / n) },
       });
     }
   });

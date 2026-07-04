@@ -63,21 +63,29 @@ export function radialField(origin: LngLat, bandMinutes: number[], profiles: Pro
   };
 }
 
-const WALK_KMH = 4.8;
+export const WALK_KMH = 4.8;
+export const CYCLE_KMH = 14;
 /** straight-line to street-network detour correction */
-const DETOUR = 1.35;
+export const DETOUR = 1.35;
 
-const walkMinutes = (a: LngLat, b: LngLat): number => {
+const minutesAt = (kmh: number, a: LngLat, b: LngLat): number => {
   const dx = (a[0] - b[0]) * KM_PER_DEG_LNG;
   const dy = (a[1] - b[1]) * KM_PER_DEG_LAT;
-  return ((Math.sqrt(dx * dx + dy * dy) * DETOUR) / WALK_KMH) * 60;
+  return ((Math.sqrt(dx * dx + dy * dy) * DETOUR) / kmh) * 60;
 };
 
+export interface AccessCaps {
+  /** longest single walk accepted, minutes */
+  maxWalkMin: number;
+  /** cycling budget from the origin (0 = no bike), minutes */
+  maxCycleMin: number;
+}
+
 /**
- * Multi-centre transit field: a point is reached either by walking straight
- * from the origin, or by riding to any station and walking out from it —
- * whichever is fastest. This is what makes the street colouring bloom around
- * each station as the wave arrives.
+ * Multi-centre transit field: a point is reached either directly from the
+ * origin (walk, or cycle if a bike budget is set), or by riding to a station
+ * and walking out from it — whichever is fastest, respecting the caps. This
+ * is what makes the street colouring bloom around each station.
  */
 export function transitField(
   origin: LngLat,
@@ -85,16 +93,27 @@ export function transitField(
   stationMinutes: Float32Array,
   /** area sampling window (lngMin, latMin, lngMax, latMax) */
   bbox: [number, number, number, number],
+  caps: AccessCaps,
 ): TimeField {
-  const centres: Array<{ pos: LngLat; t: number }> = [{ pos: origin, t: 0 }];
+  const centres: Array<{ pos: LngLat; t: number }> = [];
   tube.stations.forEach((s, i) => {
     if (stationMinutes[i] < UNREACHED) centres.push({ pos: s.pos, t: stationMinutes[i] });
   });
 
   const timeAt = (p: LngLat): number => {
     let best = UNREACHED;
+    // directly from the origin: walk, or cycle when a bike budget exists
+    const walkDirect = minutesAt(WALK_KMH, origin, p);
+    if (walkDirect <= caps.maxWalkMin) best = walkDirect;
+    if (caps.maxCycleMin > 0) {
+      const cycleDirect = minutesAt(CYCLE_KMH, origin, p);
+      if (cycleDirect <= caps.maxCycleMin && cycleDirect < best) best = cycleDirect;
+    }
+    // via a station, then walk out (the bike stays at the origin end)
     for (const c of centres) {
-      const t = c.t + walkMinutes(c.pos, p);
+      const egress = minutesAt(WALK_KMH, c.pos, p);
+      if (egress > caps.maxWalkMin) continue;
+      const t = c.t + egress;
       if (t < best) best = t;
     }
     return best;

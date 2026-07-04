@@ -1,5 +1,4 @@
-import type { ModePalette } from './palette';
-import { OVERLAP_COLOR } from './palette';
+import { COMPARE_A_STOPS, COMPARE_B_STOPS, LIKELIHOOD_STOPS, OVERLAP_COLOR } from './palette';
 
 /**
  * Per-frame paint expressions. The current time T (minutes) is baked into the
@@ -19,19 +18,19 @@ const intensity = (t: string, d: string, T: number): E =>
 /** relative position inside the lit region: 0 at origin, 1 at the frontier */
 const relDepth = (t: string, T: number): E => ['min', 1, ['/', ['get', t], Math.max(T, 0.001)]];
 
-/** solid sequential ramp: darkest at the origin, palest at the frontier */
-const gradient = (rVar: string, pal: ModePalette): E => [
+/** ramp over relative depth: stops[0] at the origin -> stops[3] at the frontier */
+const gradient = (rVar: string, stops: [string, string, string, string]): E => [
   'interpolate',
   ['linear'],
   ['var', rVar],
   0,
-  pal.stops[0],
+  stops[0],
   0.45,
-  pal.stops[1],
+  stops[1],
   0.78,
-  pal.stops[2],
+  stops[2],
   1,
-  pal.stops[3],
+  stops[3],
 ];
 
 export interface StreetPaint {
@@ -39,7 +38,11 @@ export interface StreetPaint {
   opacity: E;
 }
 
-export function streetPaint(T: number, palA: ModePalette, palB: ModePalette, comparing: boolean): StreetPaint {
+/**
+ * Single origin: green -> red "will I make it" ramp.
+ * Comparing: A blue, B orange, both-reachable medium light green.
+ */
+export function streetPaint(T: number, comparing: boolean): StreetPaint {
   const bind = (body: E): E => [
     'let',
     'ia',
@@ -57,8 +60,15 @@ export function streetPaint(T: number, palA: ModePalette, palB: ModePalette, com
 
   const color = bind(
     comparing
-      ? ['case', both, OVERLAP_COLOR, ['>=', ['var', 'ia'], ['var', 'ib']], gradient('ra', palA), gradient('rb', palB)]
-      : gradient('ra', palA),
+      ? [
+          'case',
+          both,
+          OVERLAP_COLOR,
+          ['>=', ['var', 'ia'], ['var', 'ib']],
+          gradient('ra', COMPARE_A_STOPS),
+          gradient('rb', COMPARE_B_STOPS),
+        ]
+      : gradient('ra', LIKELIHOOD_STOPS),
   );
 
   const opacity = bind(comparing ? ['max', ['var', 'ia'], ['var', 'ib']] : ['var', 'ia']);

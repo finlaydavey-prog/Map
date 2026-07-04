@@ -1,15 +1,15 @@
 import { KM_PER_DEG_LAT, KM_PER_DEG_LNG } from '../geo';
-import type { LngLat, TubeNetwork } from '../types';
+import type { JourneyOptions, LngLat, TubeNetwork } from '../types';
+import { CYCLE_KMH, DETOUR, WALK_KMH } from './timeField';
 
 /**
- * Station reach times without a street graph: walk straight to any station
- * (detour-corrected), then ride the hop graph with interchange penalties.
- * Hop times come from the TfL snapshot (distance-derived); swapping in real
- * Journey Planner timings later only changes those numbers.
+ * Station reach times without a street graph: walk (or cycle, within the
+ * budget) straight to any station, then ride the hop graph with interchange
+ * penalties. Only lines whose method toggle is on participate. Hop times
+ * come from the TfL snapshot (distance-derived); swapping in real Journey
+ * Planner timings later only changes those numbers.
  */
 
-const WALK_KMH = 4.8;
-const DETOUR = 1.35;
 const STATION_ENTRY_MIN = 2.5; // enter + reach platform
 const INTERCHANGE_MIN = 3.5;
 const STATION_EXIT_MIN = 1.0;
@@ -53,12 +53,17 @@ class Heap {
   }
 }
 
-export function computeTransitStationTimes(tube: TubeNetwork, origin: LngLat): Float32Array {
+export function computeTransitStationTimes(
+  tube: TubeNetwork,
+  origin: LngLat,
+  options: JourneyOptions,
+): Float32Array {
   const S = tube.stations.length;
+  const hops = tube.hops.filter((h) => options.methods[tube.lines[h.line].mode]);
 
   // lobby node per station (0..S-1), platform node per (line, station)
   const platformId = new Map<string, number>();
-  for (const h of tube.hops) {
+  for (const h of hops) {
     for (const si of [h.a, h.b]) {
       const key = `${h.line}:${si}`;
       if (!platformId.has(key)) platformId.set(key, S + platformId.size);
@@ -73,20 +78,34 @@ export function computeTransitStationTimes(tube: TubeNetwork, origin: LngLat): F
     adj[si].push([pid, INTERCHANGE_MIN / 2]);
     adj[pid].push([si, INTERCHANGE_MIN / 2]);
   }
-  for (const h of tube.hops) {
+  for (const h of hops) {
     const pa = platformId.get(`${h.line}:${h.a}`)!;
     const pb = platformId.get(`${h.line}:${h.b}`)!;
     adj[pa].push([pb, h.minutes]);
     adj[pb].push([pa, h.minutes]);
   }
 
+  // stations with no enabled service can't be entered
+  const inService = new Uint8Array(S);
+  for (const h of hops) {
+    inService[h.a] = 1;
+    inService[h.b] = 1;
+  }
+
   const dist = new Float64Array(total).fill(Infinity);
   const heap = new Heap();
   tube.stations.forEach((s, si) => {
+    if (!inService[si]) return;
     const dx = (s.pos[0] - origin[0]) * KM_PER_DEG_LNG;
     const dy = (s.pos[1] - origin[1]) * KM_PER_DEG_LAT;
-    const walk = ((Math.sqrt(dx * dx + dy * dy) * DETOUR) / WALK_KMH) * 60;
-    const d = walk + STATION_ENTRY_MIN;
+    const km = Math.sqrt(dx * dx + dy * dy) * DETOUR;
+    const walk = (km / WALK_KMH) * 60;
+    const cycle = (km / CYCLE_KMH) * 60;
+    // access within the caps: walk, or cycle when a bike budget is set
+    let access = walk <= options.maxWalkMin ? walk : Infinity;
+    if (options.maxCycleMin > 0 && cycle <= options.maxCycleMin) access = Math.min(access, cycle);
+    if (!Number.isFinite(access)) return;
+    const d = access + STATION_ENTRY_MIN;
     if (d < dist[si]) {
       dist[si] = d;
       heap.push(d, si);

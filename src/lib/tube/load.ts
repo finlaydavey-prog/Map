@@ -6,7 +6,7 @@ interface Snapshot {
   generated: string;
   lines: Array<{ id: string; name: string; color: string; mode: string }>;
   stations: Array<{ id: string; name: string; lat: number; lon: number }>;
-  hops: Array<{ line: number; a: number; b: number; minutes: number }>;
+  hops: Array<{ line: number; a: number; b: number; minutes: number; geom?: [number, number][] }>;
 }
 
 let cached: Promise<TubeNetwork> | null = null;
@@ -19,7 +19,7 @@ let cached: Promise<TubeNetwork> | null = null;
 export function loadTubeNetwork(): Promise<TubeNetwork> {
   if (!cached) {
     cached = LIVE
-      ? import('../../data/tfl-network.json').then((m) => fromSnapshot(m.default as Snapshot))
+      ? import('../../data/tfl-network.json').then((m) => fromSnapshot(m.default as unknown as Snapshot))
       : Promise.resolve(buildTube());
   }
   return cached;
@@ -39,15 +39,20 @@ function fromSnapshot(snap: Snapshot): TubeNetwork {
     }
   }
   return {
-    lines: snap.lines.map((l) => ({ id: l.id, name: l.name, color: l.color })),
+    lines: snap.lines.map((l) => ({
+      id: l.id,
+      name: l.name,
+      color: l.color,
+      mode: l.mode as TubeNetwork['lines'][number]['mode'],
+    })),
     stations,
     hops: snap.hops,
     stationIndex: new Map(stations.map((s, i) => [s.id, i])),
   };
 }
 
-/** [name, colour] pairs for the in-panel legend */
-export async function loadTransitLegend(): Promise<Array<[string, string]>> {
+/** [name, colour, method] triples for the in-panel legend */
+export async function loadTransitLegend(): Promise<Array<[string, string, string]>> {
   const tube = await loadTubeNetwork();
-  return tube.lines.map((l) => [l.name, l.color]);
+  return tube.lines.map((l) => [l.name, l.color, l.mode]);
 }

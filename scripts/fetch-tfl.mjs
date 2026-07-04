@@ -42,6 +42,27 @@ const KM_LNG = 69.3;
 const distKm = (a, b) =>
   Math.sqrt(((a.lon - b.lon) * KM_LNG) ** 2 + ((a.lat - b.lat) * KM_LAT) ** 2);
 
+/** Catmull-Rom curve between p1..p2 with route neighbours p0/p3 as controls */
+const curvedHop = (p0, p1, p2, p3, samples = 8) => {
+  const out = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    out.push([
+      +(
+        0.5 *
+        (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
+      ).toFixed(5),
+      +(
+        0.5 *
+        (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+      ).toFixed(5),
+    ]);
+  }
+  return out;
+};
+
 const get = async (path) => {
   const res = await fetch(`https://api.tfl.gov.uk${path}${path.includes('?') ? '&' : '?'}app_key=${KEY}`);
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
@@ -91,7 +112,12 @@ for (const line of lines) {
       if (hopSet.has(key)) continue;
       hopSet.add(key);
       const minutes = +Math.max(1.0, (distKm(a, b) / speed) * 60 + DWELL_MIN).toFixed(2);
-      hops.push({ line: lineIdx, a: a.id, b: b.id, minutes });
+      // gentle curve through the route's neighbouring stations
+      const prev = stationById.get(ids[i - 2]) ?? a;
+      const next = stationById.get(ids[i + 1]) ?? b;
+      const P = (s) => [s.lon, s.lat];
+      const geom = curvedHop(P(prev), P(a), P(b), P(next));
+      hops.push({ line: lineIdx, a: a.id, b: b.id, minutes, geom });
     }
   }
   console.log(`  ${line.id}: ${seq.stations?.length ?? 0} stations, hops so far ${hops.length}`);
@@ -101,7 +127,13 @@ for (const line of lines) {
 const used = new Set(hops.flatMap((h) => [h.a, h.b]));
 const stations = [...stationById.values()].filter((s) => used.has(s.id));
 const stationIdx = new Map(stations.map((s, i) => [s.id, i]));
-const outHops = hops.map((h) => ({ line: h.line, a: stationIdx.get(h.a), b: stationIdx.get(h.b), minutes: h.minutes }));
+const outHops = hops.map((h) => ({
+  line: h.line,
+  a: stationIdx.get(h.a),
+  b: stationIdx.get(h.b),
+  minutes: h.minutes,
+  geom: h.geom,
+}));
 
 const out = {
   generated: new Date().toISOString(),

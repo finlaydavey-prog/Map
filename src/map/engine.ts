@@ -4,17 +4,13 @@ import { profileAt, profilesFromRings, ringFromProfile, type Profile } from '../
 import { LIVE, LIVE_BOUNDS, MAPBOX_TOKEN } from '../lib/config';
 import { KM_PER_DEG_LAT, KM_PER_DEG_LNG } from '../lib/geo';
 import { assignStreetTimes, harvestStreets } from '../lib/live/harvest';
-import { radialField, transitField, type TimeField } from '../lib/live/timeField';
+import { transitField, type TimeField } from '../lib/live/timeField';
 import { computeTransitStationTimes } from '../lib/live/transitLite';
 import { buildCity, distToNetworkKm } from '../lib/mock/city';
 import { loadTubeNetwork } from '../lib/tube/load';
-import {
-  BAND_MINUTES,
-  MapboxIsochroneProvider,
-  MockIsochroneProvider,
-} from '../lib/providers/isochrone';
+import { BAND_MINUTES, MockIsochroneProvider } from '../lib/providers/isochrone';
 import { computeReach, UNREACHED, type ReachResult } from '../lib/reach';
-import type { IsochroneProvider, LngLat, TravelMode, TubeNetwork } from '../lib/types';
+import type { JourneyOptions, LngLat, TubeNetwork } from '../lib/types';
 import {
   buildStationCollection,
   buildStreetCollection,
@@ -26,7 +22,7 @@ import {
   type TransitSegProps,
 } from './geojson';
 import { stationPaint, streetPaint, transitProgress } from './expressions';
-import { COLORS, PALETTE_B, PALETTES } from './palette';
+import { ACCENT, COLORS, COMPARE_A_ACCENT, COMPARE_B_ACCENT, LIKELIHOOD_STOPS } from './palette';
 
 export interface LiveStats {
   minutes: number;
@@ -48,17 +44,16 @@ export interface EngineCallbacks {
 interface EngineState {
   originA: LngLat;
   originB: LngLat | null;
-  mode: TravelMode;
   minutes: number;
+  options: JourneyOptions;
 }
 
 const REVEAL_MINUTES_PER_SEC = 26; // sweep speed after data arrives
 const SMOOTH_TAU = 0.13; // slider-tracking time constant, seconds
 
-function histogram(times: ArrayLike<number>, filter?: (i: number) => boolean): Float32Array {
+function histogram(times: ArrayLike<number>): Float32Array {
   const cum = new Float32Array(62);
   for (let i = 0; i < times.length; i++) {
-    if (filter && !filter(i)) continue;
     const t = times[i];
     if (t >= UNREACHED) continue;
     const bin = Math.min(61, Math.max(0, Math.ceil(t)));
@@ -117,7 +112,7 @@ export class GlowEngine {
   private tube: TubeNetwork;
   // mock-mode data (only built when running keyless)
   private city = this.live ? null : buildCity();
-  private provider: IsochroneProvider;
+  private provider: MockIsochroneProvider | null = null;
 
   private streetFC: FeatureCollection<LineString, StreetProps>;
   private transitFC: FeatureCollection<LineString, TransitSegProps>;
@@ -130,6 +125,7 @@ export class GlowEngine {
   // live time fields
   private fieldA: TimeField | null = null;
   private fieldB: TimeField | null = null;
+  // mock frontier profiles
   private profilesA: Profile[] | null = null;
   private profilesB: Profile[] | null = null;
   private hasData = false;
@@ -183,9 +179,7 @@ export class GlowEngine {
     this.gl = gl;
     this.tube = tube;
     this.state = { ...initial };
-    this.provider = this.live
-      ? new MapboxIsochroneProvider(MAPBOX_TOKEN!)
-      : new MockIsochroneProvider(this.city!, this.tube);
+    if (!this.live) this.provider = new MockIsochroneProvider(this.city!, this.tube);
     this.streetFC = this.live
       ? { type: 'FeatureCollection', features: [] }
       : buildStreetCollection(this.city!);
@@ -234,7 +228,6 @@ export class GlowEngine {
     this.map.on('load', () => {
       this.addLayers();
       this.ready = true;
-      this.applyModeVisibility();
       this.recompute();
       this.lastFrameMs = performance.now();
       const loop = (now: number) => {
@@ -269,13 +262,13 @@ export class GlowEngine {
   /** React pushes desired state here; the engine diffs and reacts. */
   update(next: EngineState): void {
     const prev = this.state;
-    this.state = { ...next };
+    this.state = { ...next, options: { ...next.options, methods: { ...next.options.methods } } };
     const originChanged =
       prev.originA[0] !== next.originA[0] ||
       prev.originA[1] !== next.originA[1] ||
       (prev.originB === null) !== (next.originB === null) ||
       (prev.originB && next.originB && (prev.originB[0] !== next.originB[0] || prev.originB[1] !== next.originB[1]));
-    const modeChanged = prev.mode !== next.mode;
+    const optionsChanged = JSON.stringify(prev.options) !== JSON.stringify(next.options);
 
     if (next.originB && !this.markerB) this.markerB = this.makeBeacon('b', next.originB);
     if (!next.originB && this.markerB) {
@@ -284,12 +277,8 @@ export class GlowEngine {
     }
     if (next.originB && this.markerB) this.markerB.setLngLat(next.originB);
     this.markerA.setLngLat(next.originA);
-    this.markerA.getElement().style.setProperty('--beacon', PALETTES[next.mode].accent);
 
-    if (this.ready && (originChanged || modeChanged)) {
-      if (modeChanged) this.applyModeVisibility();
-      this.recompute();
-    }
+    if (this.ready && (originChanged || optionsChanged)) this.recompute();
   }
 
   // ---------------------------------------------------------------- markers
@@ -297,7 +286,7 @@ export class GlowEngine {
   private makeBeacon(which: 'a' | 'b', pos: LngLat): maplibregl.Marker {
     const el = document.createElement('div');
     el.className = `beacon beacon--${which}`;
-    el.style.setProperty('--beacon', which === 'a' ? PALETTES[this.state.mode].accent : PALETTE_B.accent);
+    el.style.setProperty('--beacon', which === 'a' ? ACCENT : COMPARE_B_ACCENT);
     el.innerHTML = '<div class="beacon-ring"></div><div class="beacon-ring beacon-ring--2"></div><div class="beacon-core"></div>';
     const marker = new this.gl.Marker({ element: el, draggable: true, anchor: 'center' })
       .setLngLat(pos)
@@ -373,11 +362,11 @@ export class GlowEngine {
           ['exponential', 1.6],
           ['zoom'],
           10,
-          ['*', ['get', 'w'], 0.9],
+          ['*', ['get', 'w'], 0.8],
           13,
-          ['*', ['get', 'w'], 2.1],
+          ['*', ['get', 'w'], 1.9],
           16,
-          ['*', ['get', 'w'], 4.2],
+          ['*', ['get', 'w'], 3.8],
         ],
         'line-opacity': 0,
       },
@@ -388,14 +377,15 @@ export class GlowEngine {
       type: 'line',
       source: 'frontier',
       paint: {
-        'line-color': ['match', ['get', 'which'], 'b', PALETTE_B.accent, PALETTES[this.state.mode].accent],
+        'line-color': ['match', ['get', 'which'], 'b', COMPARE_B_ACCENT, LIKELIHOOD_STOPS[3]],
         'line-width': 1.3,
         'line-opacity': 0.35,
         'line-dasharray': [3, 2.5],
       },
     } as never);
 
-    // classic transit-map look: white casing under solid line colours
+    // transit sits ABOVE the street colouring and clearly wider (Google-maps
+    // style: the network reads as the primary structure)
     add({
       id: 'transit-casing',
       type: 'line',
@@ -403,8 +393,8 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': COLORS.casing,
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 3.6, 13, 6, 16, 10],
-        'line-opacity': 0.9,
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 5, 13, 8.5, 16, 14],
+        'line-opacity': 0.92,
       },
     } as never);
     add({
@@ -414,7 +404,7 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.8, 13, 3, 16, 5],
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 2.8, 13, 4.8, 16, 8],
         'line-opacity': 0.22,
       },
     } as never);
@@ -425,7 +415,7 @@ export class GlowEngine {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 1.8, 13, 3, 16, 5],
+        'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 2.8, 13, 4.8, 16, 8],
         'line-opacity': 0,
       },
     } as never);
@@ -436,7 +426,7 @@ export class GlowEngine {
       source: 'stations',
       paint: {
         'circle-color': COLORS.stationDim,
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1.4, 13, 2.2, 16, 3.4],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1.7, 13, 2.7, 16, 4.2],
         'circle-opacity': 0.8,
       },
     } as never);
@@ -455,18 +445,14 @@ export class GlowEngine {
     } as never);
   }
 
-  private applyModeVisibility(): void {
-    const transit = this.state.mode === 'transit' ? 'visible' : 'none';
-    for (const id of ['transit-casing', 'transit-dim', 'transit-core', 'stations-dim', 'stations-dot']) {
-      this.map.setLayoutProperty(id, 'visibility', transit);
-    }
-    this.map.setPaintProperty('frontier', 'line-color', [
-      'match',
-      ['get', 'which'],
-      'b',
-      PALETTE_B.accent,
-      PALETTES[this.state.mode].accent,
-    ] as never);
+  /** disabled networks keep only their pale dim rendering */
+  private applyMethodFilter(): void {
+    const enabled = Object.entries(this.state.options.methods)
+      .filter(([, on]) => on)
+      .map(([m]) => m);
+    const filter = ['in', ['get', 'mode'], ['literal', enabled]] as never;
+    this.map.setFilter('transit-core', filter);
+    this.map.setFilter('transit-casing', filter);
   }
 
   // -------------------------------------------------------------- harvesting
@@ -479,7 +465,7 @@ export class GlowEngine {
   private harvestNow(): void {
     if (!this.live || !this.ready || this.destroyed) return;
     const b = this.map.getBounds();
-    const fc = harvestStreets(this.map as never, this.state.mode, [
+    const fc = harvestStreets(this.map as never, 'transit', [
       b.getWest(),
       b.getSouth(),
       b.getEast(),
@@ -488,7 +474,7 @@ export class GlowEngine {
     if (fc.features.length === 0) return;
     this.streetFC = fc;
     if (this.fieldA) {
-      assignStreetTimes(this.streetFC, this.state.mode, this.fieldA, this.fieldB);
+      assignStreetTimes(this.streetFC, 'transit', this.fieldA, this.fieldB);
       this.rebuildStreetHistograms();
       if (!this.firstHarvestDone) {
         this.firstHarvestDone = true;
@@ -517,16 +503,24 @@ export class GlowEngine {
 
   private async recompute(): Promise<void> {
     const gen = ++this.generation;
-    const { originA, originB, mode } = this.state;
     this.setLoading(true);
 
     try {
       if (this.live) {
-        await this.recomputeLive(gen, originA, originB, mode);
+        this.recomputeLive();
       } else {
-        await this.recomputeMock(gen, originA, originB, mode);
+        await this.recomputeMock(gen);
       }
       if (gen !== this.generation || this.destroyed) return;
+      this.applyMethodFilter();
+      // frontier colours depend on whether we're comparing
+      this.map.setPaintProperty('frontier', 'line-color', [
+        'match',
+        ['get', 'which'],
+        'b',
+        COMPARE_B_ACCENT,
+        this.state.originB ? COMPARE_A_ACCENT : LIKELIHOOD_STOPS[3],
+      ] as never);
       this.hasData = true;
       this.smoothT = 0;
       this.revealStartMs = performance.now();
@@ -534,63 +528,42 @@ export class GlowEngine {
     } catch (err) {
       if (gen === this.generation && !this.destroyed) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.cb.onToast(
-          msg.includes('429')
-            ? 'Mapbox rate limit hit — the previous view is still shown. Try again in a minute.'
-            : `Could not load travel times: ${msg}`,
-        );
+        this.cb.onToast(`Could not compute travel times: ${msg}`);
       }
     } finally {
       if (gen === this.generation) this.setLoading(false);
     }
   }
 
-  private async recomputeLive(gen: number, originA: LngLat, originB: LngLat | null, mode: TravelMode): Promise<void> {
-    let stationT: ((si: number) => number) | null = null;
+  private recomputeLive(): void {
+    const { originA, originB, options } = this.state;
+    const caps = { maxWalkMin: options.maxWalkMin, maxCycleMin: options.maxCycleMin };
 
-    if (mode === 'transit') {
-      const sA = computeTransitStationTimes(this.tube, originA);
-      const sB = originB ? computeTransitStationTimes(this.tube, originB) : null;
-      this.fieldA = transitField(originA, this.tube, sA, LIVE_BOUNDS);
-      this.fieldB = originB && sB ? transitField(originB, this.tube, sB, LIVE_BOUNDS) : null;
-      this.profilesA = null;
-      this.profilesB = null;
-      stationT = (si) => Math.min(sA[si], sB ? sB[si] : UNREACHED);
-      const minStation = new Float32Array(this.tube.stations.length);
-      for (let i = 0; i < minStation.length; i++) minStation[i] = stationT(i);
-      this.cumStations = histogram(minStation);
-    } else {
-      const [bandsA, bandsB] = await Promise.all([
-        this.provider.fetchBands(originA, mode, BAND_MINUTES),
-        originB ? this.provider.fetchBands(originB, mode, BAND_MINUTES) : Promise.resolve(null),
-      ]);
-      if (gen !== this.generation || this.destroyed) return;
-      this.profilesA = profilesFromRings(originA, bandsA);
-      this.profilesB = originB && bandsB ? profilesFromRings(originB, bandsB) : null;
-      const mA = bandsA.map((b) => b.minutes);
-      this.fieldA = radialField(originA, mA, this.profilesA);
-      this.fieldB =
-        originB && bandsB && this.profilesB ? radialField(originB, bandsB.map((b) => b.minutes), this.profilesB) : null;
-      this.cumStations = null;
-    }
+    const sA = computeTransitStationTimes(this.tube, originA, options);
+    const sB = originB ? computeTransitStationTimes(this.tube, originB, options) : null;
+    this.fieldA = transitField(originA, this.tube, sA, LIVE_BOUNDS, caps);
+    this.fieldB = originB && sB ? transitField(originB, this.tube, sB, LIVE_BOUNDS, caps) : null;
 
-    // transit overlay times (rendered only in transit mode)
-    updateTransitTimes(this.tube, this.transitFC, stationT ?? (() => UNREACHED));
+    const stationT = (si: number) => Math.min(sA[si], sB ? sB[si] : UNREACHED);
+    const minStation = new Float32Array(this.tube.stations.length);
+    for (let i = 0; i < minStation.length; i++) minStation[i] = stationT(i);
+    this.cumStations = histogram(minStation);
+
+    updateTransitTimes(this.tube, this.transitFC, stationT);
     (this.map.getSource('transit') as maplibregl.GeoJSONSource).setData(this.transitFC);
     this.stationFC.features.forEach((f, si) => {
-      f.properties.t = stationT ? stationT(si) : UNREACHED;
+      f.properties.t = stationT(si);
     });
     (this.map.getSource('stations') as maplibregl.GeoJSONSource).setData(this.stationFC);
 
-    // area stat
     this.areaScale = 1;
     this.cumArea = this.fieldB
-      ? gridUnionArea([this.fieldA!, this.fieldB], LIVE_BOUNDS)
-      : this.fieldA!.areaByMinute();
+      ? gridUnionArea([this.fieldA, this.fieldB], LIVE_BOUNDS)
+      : this.fieldA.areaByMinute();
 
     // stamp times onto whatever streets are currently harvested
-    if (this.streetFC.features.length > 0 && this.fieldA) {
-      assignStreetTimes(this.streetFC, mode, this.fieldA, this.fieldB);
+    if (this.streetFC.features.length > 0) {
+      assignStreetTimes(this.streetFC, 'transit', this.fieldA, this.fieldB);
       this.rebuildStreetHistograms();
       (this.map.getSource('streets') as maplibregl.GeoJSONSource).setData(this.streetFC);
     } else {
@@ -598,16 +571,18 @@ export class GlowEngine {
     }
   }
 
-  private async recomputeMock(gen: number, originA: LngLat, originB: LngLat | null, mode: TravelMode): Promise<void> {
+  private async recomputeMock(gen: number): Promise<void> {
+    const { originA, originB, options } = this.state;
     const city = this.city!;
+    const enabled = (m: string) => options.methods[m as keyof typeof options.methods] ?? true;
     const [bandsA, bandsB] = await Promise.all([
-      this.provider.fetchBands(originA, mode, BAND_MINUTES),
-      originB ? this.provider.fetchBands(originB, mode, BAND_MINUTES) : Promise.resolve(null),
+      this.provider!.fetchBands(originA, 'transit', BAND_MINUTES),
+      originB ? this.provider!.fetchBands(originB, 'transit', BAND_MINUTES) : Promise.resolve(null),
     ]);
     if (gen !== this.generation || this.destroyed) return;
 
-    this.reachA = computeReach(city, this.tube, originA, mode);
-    this.reachB = originB ? computeReach(city, this.tube, originB, mode) : null;
+    this.reachA = computeReach(city, this.tube, originA, 'transit', enabled);
+    this.reachB = originB ? computeReach(city, this.tube, originB, 'transit', enabled) : null;
     this.profilesA = profilesFromRings(originA, bandsA);
     this.profilesB = originB && bandsB ? profilesFromRings(originB, bandsB) : null;
 
@@ -678,20 +653,17 @@ export class GlowEngine {
   private paint(T: number): void {
     const map = this.map;
     const comparing = this.live ? !!this.fieldB : !!this.reachB;
-    const palA = PALETTES[this.state.mode];
     const z = map.getZoom();
-    const sp = streetPaint(T, palA, PALETTE_B, comparing);
+    const sp = streetPaint(T, comparing);
     const opts = { validate: false };
     map.setPaintProperty('streets-lit', 'line-color', sp.color as never, opts);
     map.setPaintProperty('streets-lit', 'line-opacity', sp.opacity as never, opts);
 
-    if (this.state.mode === 'transit') {
-      map.setPaintProperty('transit-core', 'line-opacity', transitProgress(T) as never, opts);
-      const st = stationPaint(T, zoomLerp(z, 0.7, 1.1, 1.7));
-      map.setPaintProperty('stations-dot', 'circle-radius', st.radius as never, opts);
-      map.setPaintProperty('stations-dot', 'circle-opacity', st.opacity as never, opts);
-      map.setPaintProperty('stations-dot', 'circle-stroke-width', st.strokeWidth as never, opts);
-    }
+    map.setPaintProperty('transit-core', 'line-opacity', transitProgress(T) as never, opts);
+    const st = stationPaint(T, zoomLerp(z, 0.85, 1.35, 2.1));
+    map.setPaintProperty('stations-dot', 'circle-radius', st.radius as never, opts);
+    map.setPaintProperty('stations-dot', 'circle-opacity', st.opacity as never, opts);
+    map.setPaintProperty('stations-dot', 'circle-stroke-width', st.strokeWidth as never, opts);
   }
 
   private updateFrontier(T: number): void {
@@ -723,7 +695,7 @@ export class GlowEngine {
     const stats: LiveStats = {
       minutes: this.state.minutes,
       streetsLit: Math.round(atMinute(this.cumStreets, T)),
-      stationsReached: this.state.mode === 'transit' ? Math.round(atMinute(this.cumStations, T)) : 0,
+      stationsReached: Math.round(atMinute(this.cumStations, T)),
       areaKm2: atMinute(this.cumArea, T) * this.areaScale,
       overlapStreets: comparing ? Math.round(atMinute(this.cumShared, T)) : 0,
       comparing,

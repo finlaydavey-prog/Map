@@ -34,27 +34,32 @@ public token — it ships in the client bundle either way.
 
 ## What's in the prototype
 
+- **Multi-modal journey model.** Toggle transit networks on/off (Tube,
+  Elizabeth line, DLR, Overground; Bus and National Rail are placeholder
+  chips for later) and set a max walking time plus an optional cycling
+  budget for reaching the network. Toggled-off lines stay as pale context.
 - **1–60 min slider, 1-minute granularity.** Slider movement is 100%
   client-side: the current time is smoothed each animation frame and baked
   into GPU paint expressions (`setPaintProperty`, `validate:false`), so the
   whole network re-evaluates per-feature on the GPU with zero per-street JS.
   Dragging down retracts the coloured region the same way.
 - **Street-by-street spread.** Every street segment carries a reach time
-  (minutes) and a traversal duration; each street fades in over its traversal,
-  and a solid sequential ramp (darkest at the origin, palest at the frontier)
-  encodes travel time. No glow/blur layers — flat, solid colour.
+  (minutes) and a traversal duration; each street fades in over its
+  traversal. Single origin: a green -> red likelihood ramp (green =
+  comfortably reachable, red = right at the edge of the budget).
 - **Transit mode.** Central, Victoria, Jubilee and Elizabeth lines in solid
   official TfL colours over white casing. Station-to-station hops are
   subdivided so the colour visibly crawls along the line; stations pop in as
   white dots with dark rings (interchanges heavier); line segments beyond the
   reachable time stay pale. Street colouring uses the per-mode ramp so the two
   systems read distinctly.
-- **Compare two origins.** Origin B renders in warm orange; streets reached by
-  both within the budget render deep violet. A "shared streets" stat appears.
+- **Compare two origins.** Origin A cool blue, origin B warm orange;
+  streets reachable from BOTH within the budget render medium light green,
+  with a matching "shared streets" stat.
 - **Live stats** (streets lit, stations, area km², shared streets) update
   continuously with the slider from precomputed per-minute cumulative
   histograms — O(1) per frame.
-- **Shareable URLs**: `?o=lat,lng&o2=lat,lng&mode=transit&t=25`.
+- **Shareable URLs**: `?o=lat,lng&o2=lat,lng&t=25&nets=tube,dlr&mw=15&mc=10`.
 - **Loading choreography**: the beacon pulses alone on the quiet map while
   bands "arrive" (simulated latency), then the colour sweeps outward.
 - **Mobile**: controls collapse into a bottom sheet with a compact stat row.

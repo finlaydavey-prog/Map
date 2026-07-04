@@ -90,18 +90,22 @@ export function computeReach(
   tube: TubeNetwork,
   origin: LngLat,
   mode: TravelMode,
+  /** which transit methods participate (mock mode ignores walk/cycle caps) */
+  enabledMethod?: (m: string) => boolean,
 ): ReachResult {
   const N = city.nodes.length;
   const S = tube.stations.length;
+  const hops =
+    mode === 'transit'
+      ? tube.hops.filter((h) => !enabledMethod || enabledMethod(tube.lines[h.line].mode))
+      : [];
 
   // platform node ids: one per (line, station) discovered from the hop graph
   const platformId = new Map<string, number>();
-  if (mode === 'transit') {
-    for (const h of tube.hops) {
-      for (const si of [h.a, h.b]) {
-        const key = `${h.line}:${si}`;
-        if (!platformId.has(key)) platformId.set(key, N + S + platformId.size);
-      }
+  for (const h of hops) {
+    for (const si of [h.a, h.b]) {
+      const key = `${h.line}:${si}`;
+      if (!platformId.has(key)) platformId.set(key, N + S + platformId.size);
     }
   }
   const total = N + (mode === 'transit' ? S + platformId.size : 0);
@@ -134,7 +138,7 @@ export function computeReach(
       adj[N + si].push([pid, PLATFORM_MINUTES]);
       adj[pid].push([N + si, PLATFORM_MINUTES]);
     }
-    for (const h of tube.hops) {
+    for (const h of hops) {
       const pa = platformId.get(`${h.line}:${h.a}`)!;
       const pb = platformId.get(`${h.line}:${h.b}`)!;
       adj[pa].push([pb, h.minutes]);

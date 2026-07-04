@@ -1,23 +1,20 @@
-import { useMemo } from 'react';
-import type { ModePalette } from '../map/palette';
+import { ACCENT, LIKELIHOOD_STOPS } from '../map/palette';
 
 interface Props {
   value: number;
   onChange(v: number): void;
-  palette: ModePalette;
 }
 
 const TICKS = [10, 20, 30, 40, 50, 60];
 
-export function TimeSlider({ value, onChange, palette }: Props) {
+// the slider fill mirrors the map's likelihood ramp: green -> red
+const FILL = `linear-gradient(90deg, ${LIKELIHOOD_STOPS[0]}, ${LIKELIHOOD_STOPS[1]} 45%, ${LIKELIHOOD_STOPS[2]} 78%, ${LIKELIHOOD_STOPS[3]})`;
+
+export function TimeSlider({ value, onChange }: Props) {
   const pct = ((value - 1) / 59) * 100;
-  const fill = useMemo(
-    () => `linear-gradient(90deg, ${palette.stops[0]}, ${palette.stops[1]} 45%, ${palette.stops[2]} 78%, ${palette.stops[3]})`,
-    [palette],
-  );
 
   return (
-    <div className="w-full select-none" style={{ ['--accent' as string]: palette.accent }}>
+    <div className="w-full select-none" style={{ ['--accent' as string]: ACCENT }}>
       <div className="mb-1.5 flex items-end justify-between">
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-3xl font-semibold leading-none text-slate-900 tabular-nums">{value}</span>
@@ -32,7 +29,7 @@ export function TimeSlider({ value, onChange, palette }: Props) {
         {/* reached fill */}
         <div
           className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full"
-          style={{ width: `${pct}%`, background: fill }}
+          style={{ width: `${pct}%`, background: FILL }}
         />
         <input
           type="range"

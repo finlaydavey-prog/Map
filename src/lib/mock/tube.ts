@@ -1,3 +1,4 @@
+import { curvedHop } from '../tube/curve';
 import type { TubeHop, TubeLine, TubeNetwork, TubeStation } from '../types';
 
 /**
@@ -68,12 +69,14 @@ const STATIONS: Raw[] = [
 const LINES: Array<{
   id: string;
   name: string;
+  mode: 'tube' | 'elizabeth-line';
   hopMinutes: number;
   stations: string[];
 }> = [
   {
     id: 'central',
     name: 'Central',
+    mode: 'tube',
     hopMinutes: 1.8,
     stations: [
       'notting-hill', 'queensway', 'lancaster-gate', 'marble-arch', 'bond-street',
@@ -84,6 +87,7 @@ const LINES: Array<{
   {
     id: 'victoria',
     name: 'Victoria',
+    mode: 'tube',
     hopMinutes: 1.9,
     stations: [
       'brixton', 'stockwell', 'vauxhall', 'pimlico', 'victoria', 'green-park',
@@ -93,6 +97,7 @@ const LINES: Array<{
   {
     id: 'jubilee',
     name: 'Jubilee',
+    mode: 'tube',
     hopMinutes: 2.0,
     stations: [
       'baker-street', 'bond-street', 'green-park', 'westminster', 'waterloo',
@@ -102,6 +107,7 @@ const LINES: Array<{
   {
     id: 'elizabeth',
     name: 'Elizabeth',
+    mode: 'elizabeth-line',
     hopMinutes: 2.6,
     stations: [
       'paddington', 'bond-street', 'tottenham-court-road', 'farringdon',
@@ -118,19 +124,21 @@ export function buildTube(): TubeNetwork {
     lines: [],
   }));
   const stationIndex = new Map(stations.map((s, i) => [s.id, i] as const));
-  const lines: TubeLine[] = LINES.map((l) => ({ id: l.id, name: l.name, color: TFL_COLOURS[l.id] }));
+  const lines: TubeLine[] = LINES.map((l) => ({ id: l.id, name: l.name, color: TFL_COLOURS[l.id], mode: l.mode }));
   const hops: TubeHop[] = [];
   LINES.forEach((l, li) => {
     for (const sid of l.stations) {
       const s = stations[stationIndex.get(sid)!];
       if (!s.lines.includes(l.id)) s.lines.push(l.id);
     }
+    const pos = l.stations.map((sid) => stations[stationIndex.get(sid)!].pos);
     for (let i = 1; i < l.stations.length; i++) {
       hops.push({
         line: li,
         a: stationIndex.get(l.stations[i - 1])!,
         b: stationIndex.get(l.stations[i])!,
         minutes: l.hopMinutes,
+        geom: curvedHop(pos[i - 2] ?? pos[i - 1], pos[i - 1], pos[i], pos[i + 1] ?? pos[i]),
       });
     }
   });

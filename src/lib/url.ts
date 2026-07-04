@@ -1,13 +1,14 @@
-import type { LngLat, TravelMode } from './types';
-import { MODES } from './types';
+import type { JourneyOptions, LngLat, TransitMethod } from './types';
+import { DEFAULT_JOURNEY } from './types';
 
 export interface ShareState {
   originA: LngLat;
   originB: LngLat | null;
-  mode: TravelMode;
   minutes: number;
+  options: JourneyOptions;
 }
 
+const METHODS: TransitMethod[] = ['tube', 'elizabeth-line', 'dlr', 'overground'];
 const fmt = (p: LngLat) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`; // lat,lng
 
 function parseLatLng(s: string | null): LngLat | null {
@@ -18,6 +19,11 @@ function parseLatLng(s: string | null): LngLat | null {
   if (lat < 51.3 || lat > 51.7 || lng < -0.4 || lng > 0.2) return null;
   return [lng, lat];
 }
+
+const clampInt = (v: string | null, lo: number, hi: number): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : null;
+};
 
 export function readShareState(): Partial<ShareState> {
   let q: URLSearchParams;
@@ -31,10 +37,20 @@ export function readShareState(): Partial<ShareState> {
   if (a) out.originA = a;
   const b = parseLatLng(q.get('o2'));
   if (b) out.originB = b;
-  const mode = q.get('mode') as TravelMode | null;
-  if (mode && MODES.includes(mode)) out.mode = mode;
-  const t = Number(q.get('t'));
-  if (Number.isFinite(t) && t >= 1 && t <= 60) out.minutes = Math.round(t);
+  const t = clampInt(q.get('t'), 1, 60);
+  if (t !== null) out.minutes = t;
+
+  const options: JourneyOptions = {
+    methods: { ...DEFAULT_JOURNEY.methods },
+    maxWalkMin: clampInt(q.get('mw'), 1, 60) ?? DEFAULT_JOURNEY.maxWalkMin,
+    maxCycleMin: clampInt(q.get('mc'), 0, 60) ?? DEFAULT_JOURNEY.maxCycleMin,
+  };
+  const nets = q.get('nets');
+  if (nets !== null) {
+    const on = new Set(nets.split(',').filter(Boolean));
+    for (const m of METHODS) options.methods[m] = on.has(m);
+  }
+  out.options = options;
   return out;
 }
 
@@ -42,8 +58,10 @@ export function writeShareState(s: ShareState): void {
   const q = new URLSearchParams();
   q.set('o', fmt(s.originA));
   if (s.originB) q.set('o2', fmt(s.originB));
-  q.set('mode', s.mode);
   q.set('t', String(s.minutes));
+  q.set('nets', METHODS.filter((m) => s.options.methods[m]).join(','));
+  q.set('mw', String(s.options.maxWalkMin));
+  if (s.options.maxCycleMin > 0) q.set('mc', String(s.options.maxCycleMin));
   try {
     window.history.replaceState(null, '', `${window.location.pathname}?${q.toString()}`);
   } catch {
