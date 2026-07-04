@@ -11,10 +11,9 @@ reached station.
 The app runs in one of two modes, chosen at build time:
 
 - **Live mode** (`VITE_MAPBOX_TOKEN` set): real Mapbox light basemap, real
-  street geometry harvested from the vector tiles, real Mapbox Isochrone
-  contours (drive / walk / cycle), real Mapbox Geocoding search. Transit
-  reachability still uses the built-in 4-line tube model (real TfL colours
-  and approximate real station coordinates) until a TfL API key is wired in.
+  street geometry harvested from the vector tiles, real Mapbox Geocoding
+  search, and the real TfL network (19 lines, 463 stations) from the
+  committed snapshot (`scripts/fetch-tfl.mjs`).
 - **Mock mode** (no token): fully offline procedural London — the original
   keyless prototype, kept working so the animation can always be demoed and
   tuned without quota.
@@ -47,12 +46,11 @@ public token — it ships in the client bundle either way.
   (minutes) and a traversal duration; each street fades in over its
   traversal. Single origin: a green -> red likelihood ramp (green =
   comfortably reachable, red = right at the edge of the budget).
-- **Transit mode.** Central, Victoria, Jubilee and Elizabeth lines in solid
-  official TfL colours over white casing. Station-to-station hops are
-  subdivided so the colour visibly crawls along the line; stations pop in as
-  white dots with dark rings (interchanges heavier); line segments beyond the
-  reachable time stay pale. Street colouring uses the per-mode ramp so the two
-  systems read distinctly.
+- **The TfL network as arteries.** Lines render in solid official colours
+  over white casing, clearly wider than streets, with gently curved geometry
+  through stations. Hops are subdivided so the colour visibly crawls along
+  the line; stations pop in as white dots with dark rings (interchanges
+  heavier); unreached segments stay pale.
 - **Compare two origins.** Origin A cool blue, origin B warm orange;
   streets reachable from BOTH within the budget render medium light green,
   with a matching "shared streets" stat.
