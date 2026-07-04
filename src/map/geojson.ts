@@ -1,6 +1,7 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import { UNREACHED } from '../lib/reach';
 import { slicePolyline } from '../lib/tube/curve';
+import { RENDERED_TRANSIT } from '../lib/types';
 import type { CityModel, TubeNetwork } from '../lib/types';
 import { EDGE_MINOR } from '../lib/types';
 
@@ -52,10 +53,10 @@ export interface TransitSegProps {
 export function buildTransitCollection(tube: TubeNetwork): FeatureCollection<LineString, TransitSegProps> {
   const features: Feature<LineString, TransitSegProps>[] = [];
   tube.hops.forEach((hop, hi) => {
+    // invisible networks (bus, national rail) never get features at all
+    if (!RENDERED_TRANSIT.includes(tube.lines[hop.line].mode)) return;
     const geom = hop.geom ?? [tube.stations[hop.a].pos, tube.stations[hop.b].pos];
-    // bus corridor hops are short: one segment each keeps the source lean
-    const n =
-      tube.lines[hop.line].mode === 'bus' ? 1 : Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
+    const n = Math.min(8, Math.max(3, Math.round(hop.minutes * 2)));
     for (let k = 0; k < n; k++) {
       features.push({
         type: 'Feature',
@@ -105,25 +106,27 @@ export interface StationProps {
   name: string;
   t: number;
   interchange: 0 | 1;
-  /** 'b' bus stop, 's' rail-type station */
-  kind: string;
+  /** index into TubeNetwork.stations (the FC skips bus stops) */
+  si: number;
   [key: string]: number | string;
 }
 
 export function buildStationCollection(tube: TubeNetwork): FeatureCollection<Point, StationProps> {
-  return {
-    type: 'FeatureCollection',
-    features: tube.stations.map((s) => ({
+  const features: Feature<Point, StationProps>[] = [];
+  tube.stations.forEach((s, si) => {
+    if (s.kind === 'b') return; // bus stops are part of the model, not the map
+    features.push({
       type: 'Feature',
       properties: {
         name: s.name,
         t: UNREACHED,
-        interchange: s.lines.length > 1 && s.kind !== 'b' ? 1 : 0,
-        kind: s.kind ?? 's',
+        interchange: s.lines.length > 1 ? 1 : 0,
+        si,
       },
       geometry: { type: 'Point', coordinates: s.pos },
-    })),
-  };
+    });
+  });
+  return { type: 'FeatureCollection', features };
 }
 
 export function polygonFeature(ring: [number, number][]): Feature<Polygon> {

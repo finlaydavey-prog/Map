@@ -63,6 +63,21 @@ export const PlusIcon = ({ className }: IconProps) => (
   </svg>
 );
 
+export const ChevronUpIcon = ({ className }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M6 14l6-6 6 6" />
+  </svg>
+);
+
+export const SlidersIcon = ({ className }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className={className}>
+    <path d="M5 5v5m0 4v5M12 5v2m0 4v8M19 5v8m0 4v2" />
+    <circle cx="5" cy="12" r="1.8" />
+    <circle cx="12" cy="9" r="1.8" />
+    <circle cx="19" cy="15" r="1.8" />
+  </svg>
+);
+
 export const XIcon = ({ className }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={className}>
     <path d="M6 6l12 12M18 6L6 18" />

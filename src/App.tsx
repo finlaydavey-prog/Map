@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapView, type MapViewHandle } from './components/MapView';
 import { NetworkControls } from './components/NetworkControls';
@@ -6,7 +6,7 @@ import { SearchBox } from './components/SearchBox';
 import { StatCard } from './components/StatCard';
 import { TimeSlider } from './components/TimeSlider';
 import { Toasts, type Toast } from './components/Toasts';
-import { LinkIcon, PlusIcon, XIcon } from './components/icons';
+import { ChevronUpIcon, LinkIcon, PlusIcon, SlidersIcon, XIcon } from './components/icons';
 import { LIVE, MAPBOX_TOKEN } from './lib/config';
 import { mapboxGeocode } from './lib/live/geocode';
 import { searchPlaces } from './lib/mock/places';
@@ -14,7 +14,7 @@ import { loadTransitLegend } from './lib/tube/load';
 import type { LiveStats } from './map/engine';
 import { ACCENT } from './map/palette';
 import type { JourneyOptions, LngLat } from './lib/types';
-import { DEFAULT_JOURNEY } from './lib/types';
+import { DEFAULT_JOURNEY, RENDERED_TRANSIT } from './lib/types';
 import { readShareState, writeShareState } from './lib/url';
 
 const DEFAULT_ORIGIN: LngLat = [-0.1337, 51.5136]; // Soho
@@ -30,6 +30,7 @@ export default function App() {
   const [minutes, setMinutes] = useState(initial.current.minutes ?? 25);
   const [options, setOptions] = useState<JourneyOptions>(initial.current.options ?? DEFAULT_JOURNEY);
   const [compareArmed, setCompareArmed] = useState(false);
+  const [panelsHidden, setPanelsHidden] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [legend, setLegend] = useState<Array<[string, string, string]>>([]);
   const [stats, setStats] = useState<LiveStats>({
@@ -98,13 +99,12 @@ export default function App() {
     }
   }, [toast]);
 
-  // legend: individual rapid-transit lines, rail operators collapsed to one
+  // legend shows only networks that are actually drawn (bus/rail work invisibly)
   const enabledLegend = legend.filter(
-    ([, , mode]) => mode !== 'national-rail' && options.methods[mode as keyof JourneyOptions['methods']],
+    ([, , mode]) =>
+      RENDERED_TRANSIT.includes(mode as (typeof RENDERED_TRANSIT)[number]) &&
+      options.methods[mode as keyof JourneyOptions['methods']],
   );
-  if (options.methods['national-rail'] && legend.some(([, , m]) => m === 'national-rail')) {
-    enabledLegend.push(['National Rail', '#3e5a75', 'national-rail']);
-  }
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-paper font-display text-slate-900">
@@ -122,7 +122,24 @@ export default function App() {
 
       <Toasts toasts={toasts} />
 
+      {/* --------------------------------------------- collapsed panel pill */}
+      <AnimatePresence>
+        {panelsHidden && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            onClick={() => setPanelsHidden(false)}
+            title="Show controls"
+            className="glass absolute left-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-slate-600 transition hover:text-slate-900 sm:left-4 sm:top-4"
+          >
+            <SlidersIcon className="h-5 w-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* ---------------------------------------------------- control panel */}
+      {!panelsHidden && (
       <div className="absolute left-3 right-3 top-3 z-10 sm:left-4 sm:right-auto sm:top-4 sm:w-80">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass space-y-3 rounded-2xl p-3.5">
           <div className="flex items-center justify-between">
@@ -130,7 +147,16 @@ export default function App() {
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: ACCENT }} />
               <span className="text-sm font-bold tracking-[0.28em] text-slate-900">LUMEN</span>
             </div>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">London</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">London</span>
+              <button
+                onClick={() => setPanelsHidden(true)}
+                title="Hide controls (slider stays)"
+                className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-900/5 hover:text-slate-700"
+              >
+                <ChevronUpIcon className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <SearchBox
@@ -189,11 +215,14 @@ export default function App() {
           </div>
         </motion.div>
       </div>
+      )}
 
       {/* ------------------------------------------------------- stat card */}
-      <div className="absolute right-4 top-4 z-10 hidden sm:block">
-        <StatCard stats={stats} />
-      </div>
+      {!panelsHidden && (
+        <div className="absolute right-4 top-4 z-10 hidden sm:block">
+          <StatCard stats={stats} />
+        </div>
+      )}
 
       {/* ---------------------------------------------------------- slider */}
       <div className="absolute bottom-3 left-1/2 z-10 w-[min(680px,calc(100vw-1.5rem))] -translate-x-1/2 sm:bottom-5">

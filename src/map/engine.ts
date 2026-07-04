@@ -423,27 +423,8 @@ export class GlowEngine {
     } as never);
 
     // transit sits ABOVE the street colouring and clearly wider (Google-maps
-    // style); bus corridors read as capillaries, rail approaches stay quiet
-    const byMode = (bus: number, rail: number, rapid: number) =>
-      [
-        'case',
-        ['==', ['get', 'mode'], 'bus'],
-        bus,
-        ['==', ['get', 'mode'], 'national-rail'],
-        rail,
-        rapid,
-      ] as never;
-    const transitWidth = [
-      'interpolate',
-      ['exponential', 1.6],
-      ['zoom'],
-      10,
-      byMode(1.0, 1.4, 2.8),
-      13,
-      byMode(1.8, 2.4, 4.8),
-      16,
-      byMode(3.0, 4.0, 8),
-    ] as never;
+    // style); bus + rail shape the maths but are never drawn
+    const transitWidth = ['interpolate', ['exponential', 1.6], ['zoom'], 10, 2.8, 13, 4.8, 16, 8] as never;
     add({
       id: 'transit-casing',
       type: 'line',
@@ -463,7 +444,7 @@ export class GlowEngine {
       paint: {
         'line-color': ['get', 'color'],
         'line-width': transitWidth,
-        'line-opacity': byMode(0.08, 0.1, 0.22),
+        'line-opacity': 0.22,
       },
     } as never);
     add({
@@ -484,19 +465,7 @@ export class GlowEngine {
       source: 'stations',
       paint: {
         'circle-color': COLORS.stationDim,
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          ['case', ['==', ['get', 'kind'], 'b'], 0, 1.7],
-          13,
-          ['case', ['==', ['get', 'kind'], 'b'], 0, 2.7],
-          13.5,
-          ['case', ['==', ['get', 'kind'], 'b'], 1.1, 2.9],
-          16,
-          ['case', ['==', ['get', 'kind'], 'b'], 2, 4.2],
-        ],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1.7, 13, 2.7, 16, 4.2],
         'circle-opacity': 0.8,
       },
     } as never);
@@ -515,17 +484,14 @@ export class GlowEngine {
     } as never);
   }
 
-  /** disabled networks keep only their pale dim rendering; buses never get casing */
+  /** disabled networks keep only their pale dim rendering */
   private applyMethodFilter(): void {
     const enabled = Object.entries(this.state.options.methods)
       .filter(([, on]) => on)
       .map(([m]) => m);
-    this.map.setFilter('transit-core', ['in', ['get', 'mode'], ['literal', enabled]] as never);
-    this.map.setFilter('transit-casing', [
-      'all',
-      ['in', ['get', 'mode'], ['literal', enabled]],
-      ['!', ['in', ['get', 'mode'], ['literal', ['bus', 'national-rail']]]],
-    ] as never);
+    const filter = ['in', ['get', 'mode'], ['literal', enabled]] as never;
+    this.map.setFilter('transit-core', filter);
+    this.map.setFilter('transit-casing', filter);
   }
 
   // -------------------------------------------------------------- harvesting
@@ -628,8 +594,8 @@ export class GlowEngine {
 
     updateTransitTimes(this.tube, this.transitFC, stationT);
     (this.map.getSource('transit') as maplibregl.GeoJSONSource).setData(this.transitFC);
-    this.stationFC.features.forEach((f, si) => {
-      f.properties.t = stationT(si);
+    this.stationFC.features.forEach((f) => {
+      f.properties.t = stationT(f.properties.si as number);
     });
     (this.map.getSource('stations') as maplibregl.GeoJSONSource).setData(this.stationFC);
 
@@ -678,8 +644,8 @@ export class GlowEngine {
     const stationT = (si: number) => Math.min(a.stationMin[si], b ? b.stationMin[si] : UNREACHED);
     updateTransitTimes(this.tube, this.transitFC, stationT);
     (this.map.getSource('transit') as maplibregl.GeoJSONSource).setData(this.transitFC);
-    this.stationFC.features.forEach((f, si) => {
-      f.properties.t = stationT(si);
+    this.stationFC.features.forEach((f) => {
+      f.properties.t = stationT(f.properties.si as number);
     });
     (this.map.getSource('stations') as maplibregl.GeoJSONSource).setData(this.stationFC);
 
@@ -737,7 +703,7 @@ export class GlowEngine {
     map.setPaintProperty('streets-lit', 'line-opacity', sp.opacity as never, opts);
 
     map.setPaintProperty('transit-core', 'line-opacity', transitProgress(T) as never, opts);
-    const st = stationPaint(T, zoomLerp(z, 0.85, 1.35, 2.1), z < 13.5 ? 0 : 0.55);
+    const st = stationPaint(T, zoomLerp(z, 0.85, 1.35, 2.1));
     map.setPaintProperty('stations-dot', 'circle-radius', st.radius as never, opts);
     map.setPaintProperty('stations-dot', 'circle-opacity', st.opacity as never, opts);
     map.setPaintProperty('stations-dot', 'circle-stroke-width', st.strokeWidth as never, opts);

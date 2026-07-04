@@ -71,6 +71,13 @@ export interface TubeStation {
 /** toggleable transit networks */
 export type TransitMethod = 'tube' | 'elizabeth-line' | 'dlr' | 'overground' | 'national-rail' | 'bus';
 
+/**
+ * Networks that get DRAWN on the map. Bus corridors and rail approach tracks
+ * still shape the journey model but stay invisible — rendering them buried
+ * the map in ink.
+ */
+export const RENDERED_TRANSIT: TransitMethod[] = ['tube', 'elizabeth-line', 'dlr', 'overground'];
+
 /** how the user reaches (and leaves) the transit network */
 export type AccessMode = 'walk' | 'cycle';
 
